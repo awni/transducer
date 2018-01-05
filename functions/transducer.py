@@ -2,7 +2,7 @@ from __future__ import division
 
 import torch
 from torch.autograd import Function
-from _ext import transducer
+from .._ext import transducer
 
 class Transducer(Function):
 
