@@ -92,7 +92,7 @@ float cost_and_grad_single(float* log_probs, float* grads,
             for (int v = 0; v < V; v++) {
                 float g = grads[idx3(t, u, v, U, V)];
                 if (g != 0) {
-                    grads[idx3(t, u, v, U, V)] = exp(-forward_ll + g + log_probs[idx3(t, u, v, U, V)]);
+                    grads[idx3(t, u, v, U, V)] = -exp(-forward_ll + g + log_probs[idx3(t, u, v, U, V)]);
                 }
             }
         }

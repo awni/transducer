@@ -78,7 +78,7 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
     T, U, _ = log_probs.shape
     grads = np.full(log_probs.shape, -float("inf"))
     log_like = betas[0, 0]
-    likelihood = np.exp(log_like)
+    #likelihood = np.exp(log_like)
 
     grads[T-1, U-1, blank] = alphas[T-1, U-1]
 
@@ -86,10 +86,10 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
     for u, l in enumerate(labels):
         grads[:, u, l] = alphas[:, u] + betas[:, u+1]
 
-    grads = grads + log_probs
+    grads = grads + log_probs - log_like
     grads = np.exp(grads)
 
-    grads = (1 / likelihood) * grads
+    grads = -grads
     return grads
 
 def transduce(log_probs, labels, blank=0):
@@ -134,12 +134,13 @@ def test():
       "Loglikelihood from forward and backward pass mismatch."
 
     grads = compute_gradient(log_probs, alphas, betas, labels, blank)
-    num_grads = numerical_gradient(log_probs, labels, ll_forward, blank)
+    neg_loglike = -ll_forward
+    num_grads = numerical_gradient(log_probs, labels, neg_loglike, blank)
     assert np.allclose(grads, num_grads,
                        atol=1e-6, rtol=1e-6), \
             "Gradient / numerical gradient mismatch."
 
-def numerical_gradient(log_probs, labels, loglike, blank):
+def numerical_gradient(log_probs, labels, neg_loglike, blank):
     epsilon = 1e-5
     T, U, V = log_probs.shape
     grads = np.zeros(log_probs.shape)
@@ -148,7 +149,7 @@ def numerical_gradient(log_probs, labels, loglike, blank):
             for v in range(V):
                 log_probs[t, u, v] += epsilon
                 alphas, ll_forward = forward_pass(log_probs, labels, blank)
-                grads[t, u, v] = (ll_forward - loglike) / epsilon
+                grads[t, u, v] = (-ll_forward - neg_loglike) / epsilon
                 log_probs[t, u, v] -= epsilon
     return grads
 
