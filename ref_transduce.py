@@ -3,11 +3,15 @@ Python reference implementation of the
 sequence transducer.
 Author: Awni Hannun
 
-Based on the paper
-"Sequence Transduction with Recurrent Neural Networks"
-by Alex Graves 2012
+Based on the papers:
 
-URL: https://arxiv.org/abs/1211.3711
+ - "Sequence Transduction with Recurrent Neural Networks"
+    Graves, 2012
+    https://arxiv.org/abs/1211.3711
+
+ - "Speech Recognition with Deep Recurrent Neural Networks"
+    Graves, et al., 2013
+    https://arxiv.org/abs/1303.5778
 """
 
 import math
@@ -78,7 +82,6 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
     T, U, _ = log_probs.shape
     grads = np.full(log_probs.shape, -float("inf"))
     log_like = betas[0, 0]
-    #likelihood = np.exp(log_like)
 
     grads[T-1, U-1, blank] = alphas[T-1, U-1]
 
