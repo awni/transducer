@@ -8,7 +8,7 @@ def log_sum_exp(a, b):
 
 def decode_static(log_probs, beam_size=1, blank=0):
     """
-    Decode best prefix in the RNN Transducer.  This decoder is static, it does
+    Decode best prefix in the RNN Transducer. This decoder is static, it does
     not update the next step distribution based on the previous prediction. As
     such it looks for hypotheses which are length U.
     """
