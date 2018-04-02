@@ -13,7 +13,7 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 
-from functions.transducer import Transducer, TransducerLoss
+from transducer.functions.transducer import Transducer, TransducerLoss
 
 def wrap_and_call(fn, acts, labels):
     acts = autograd.Variable(torch.FloatTensor(acts),
@@ -165,7 +165,7 @@ def time_test():
     acts = autograd.Variable(torch.FloatTensor(acts))
     lengths = [acts.shape[1]] * acts.shape[0]
     label_lengths = [len(l) for l in labels]
-    labels = [l for label in labels for l in label]
+    labels = np.array([l for label in labels for l in label])
     labels = autograd.Variable(torch.IntTensor(labels))
     lengths = autograd.Variable(torch.IntTensor(lengths))
     label_lengths = autograd.Variable(torch.IntTensor(label_lengths))
