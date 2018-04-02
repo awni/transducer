@@ -74,7 +74,8 @@ float cost_and_grad_single(float* log_probs, float* grads,
     float backward_ll = betas[0];
 
     float diff = fabs(backward_ll - forward_ll);
-    if (diff > 1e-8) {
+    float diff_tol = fmax(1e-6 * fabs(forward_ll), 1e-8);
+    if (diff > diff_tol) {
         printf("WARNING: Forward backward likelihood mismatch %f\n", diff);
     }
 
