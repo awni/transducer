@@ -1,4 +1,8 @@
+
+#if !defined(APPLE)
 #include <omp.h>
+#endif
+
 #include <TH/TH.h>
 
 #include "transducer.h"
@@ -69,11 +73,11 @@ float cost_and_grad_single(float* log_probs, float* grads,
     }
     float backward_ll = betas[0];
 
-    float diff = abs(backward_ll - forward_ll);
+    float diff = fabs(backward_ll - forward_ll);
     if (diff > 1e-8) {
         printf("WARNING: Forward backward likelihood mismatch %f\n", diff);
     }
-    
+
     // Gradients w.r.t. log probabilities
     grads[idx3(T-1, U-1, blank, s, V)] = alphas[idx2(T-1, U-1, U)];
     for (int t = 0; t < T-1; t++) {
