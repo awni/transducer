@@ -5,7 +5,7 @@ Tested with Python 2.7 and Python 3.6.
 
 ## Install and Test
 
-First install (PyTorch)[http://pytorch.org/] then from the top level of the
+First install [PyTorch](http://pytorch.org/) then from the top level of the
 repo run
 
 ```
