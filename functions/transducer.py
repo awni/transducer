@@ -81,7 +81,7 @@ class TransducerLoss(Transducer):
         return grads, None, None, None
 
 def check_type(var, t, name):
-    if type(var) is not t:
+    if var.dtype is not t:
         raise TypeError("{} must be {}".format(name, t))
 
 def check_contiguous(var, name):
@@ -93,13 +93,10 @@ def check_dim(var, dim, name):
         raise ValueError("{} must be {}D".format(name, dim))
 
 def certify_inputs(log_probs, labels, lengths, label_lengths):
-    if log_probs.is_cuda:
-        check_type(log_probs, torch.cuda.FloatTensor, "log_probs")
-    else:
-        check_type(log_probs, torch.FloatTensor, "log_probs")
-    check_type(labels, torch.IntTensor, "labels")
-    check_type(label_lengths, torch.IntTensor, "label_lengths")
-    check_type(lengths, torch.IntTensor, "lengths")
+    check_type(log_probs, torch.float32, "log_probs")
+    check_type(labels, torch.int32, "labels")
+    check_type(label_lengths, torch.int32, "label_lengths")
+    check_type(lengths, torch.int32, "lengths")
     check_contiguous(labels, "labels")
     check_contiguous(label_lengths, "label_lengths")
     check_contiguous(lengths, "lengths")
