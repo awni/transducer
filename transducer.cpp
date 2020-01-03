@@ -3,9 +3,7 @@
 #include <omp.h>
 #endif
 
-#include <TH/TH.h>
-
-#include "transducer.h"
+#include <torch/extension.h>
 
 inline float log_sum_exp(float a, float b) {
     if (!isfinite(a)) return b;
@@ -130,7 +128,7 @@ void cost_and_grad(float* log_probs, float* grads,
     }
 }
 
-void transduce(THFloatTensor *th_log_probs,
+/*void transduce(THFloatTensor *th_log_probs,
                THIntTensor *th_labels,
                THIntTensor *th_input_lengths,
                THIntTensor *th_label_lengths,
@@ -154,4 +152,35 @@ void transduce(THFloatTensor *th_log_probs,
                   input_lengths, batch_size,
                   max_t, max_u,
                   alphabet_size, blank);
+}*/
+
+void transduce(
+       torch::Tensor th_log_probs,
+       torch::Tensor th_labels,
+       torch::Tensor th_input_lengths,
+       torch::Tensor th_label_lengths,
+       torch::Tensor th_costs,
+       torch::Tensor th_grads,
+       int blank) {
+    int batch_size = th_log_probs.size(0);
+    int max_t = th_log_probs.size(1);
+    int max_u = th_log_probs.size(2);
+    int alphabet_size = th_log_probs.size(3);
+
+    auto log_probs = th_log_probs.data_ptr<float>();
+    auto input_lengths = th_input_lengths.data_ptr<int>();
+    int *labels = th_labels.data_ptr<int>();
+    int *label_lengths = th_label_lengths.data_ptr<int>();
+
+    float *costs = th_costs.data_ptr<float>();
+    float *grads = th_grads.data_ptr<float>();
+    cost_and_grad(log_probs, grads, costs,
+                  labels, label_lengths,
+                  input_lengths, batch_size,
+                  max_t, max_u,
+                  alphabet_size, blank);
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("transduce", &transduce, "Transduce");
 }

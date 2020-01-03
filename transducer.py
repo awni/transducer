@@ -2,7 +2,7 @@ from __future__ import division
 
 import torch
 from torch.autograd import Function
-from .._ext import transducer
+import transducer_cpp
 
 class Transducer(Function):
 
@@ -17,7 +17,8 @@ class Transducer(Function):
         super(Transducer, self).__init__()
         self.blank_label = blank_label
 
-    def forward(self, log_probs, labels, lengths, label_lengths):
+    @staticmethod
+    def forward(ctx, log_probs, labels, lengths, label_lengths):
         """
         Computes the Transducer cost for a minibatch of examples.
 
@@ -43,22 +44,23 @@ class Transducer(Function):
         costs = torch.zeros(log_probs.shape[0])
         grads = log_probs.new(log_probs.shape).zero_()
 
-        blank_label = self.blank_label
+        blank_label = 0#self.blank_label
         if blank_label is None:
             blank_label = log_probs.shape[-1] - 1
 
-        transducer.transduce(log_probs, labels,
+        transducer_cpp.transduce(log_probs, labels,
                              lengths, label_lengths,
                              costs, grads, blank_label)
-        self._grads = grads
         if is_cuda:
             costs = costs.cuda()
-            self._grads = grads.cuda()
+            grads = grads.cuda()
+        ctx.save_for_backward(grads)
 
         return costs
 
-    def backward(self, cost):
-        return self._grads, None, None, None
+    @staticmethod
+    def backward(ctx, cost):
+        return ctx.saved_tensors[0], None, None, None
 
 class TransducerLoss(Transducer):
     def __init__(self, size_average=True, blank_label=None):
@@ -117,5 +119,3 @@ def certify_inputs(log_probs, labels, lengths, label_lengths):
         raise ValueError("Input length mismatch")
     if U != max_U + 1:
         raise ValueError("Output length mismatch")
-
-

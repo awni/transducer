@@ -10,30 +10,28 @@ from __future__ import print_function
 import numpy as np
 import time
 import torch
-import torch.autograd as autograd
 import torch.nn as nn
 
-from transducer.functions.transducer import Transducer, TransducerLoss
+from transducer import Transducer, TransducerLoss
 
 def wrap_and_call(fn, acts, labels):
-    acts = autograd.Variable(torch.FloatTensor(acts),
-                             requires_grad=True)
+    acts = torch.tensor(acts.astype(np.float32), requires_grad=True)
     if use_cuda:
         acts = acts.cuda()
 
     lengths = [acts.shape[1]] * acts.shape[0]
     label_lengths = [len(l) for l in labels]
     labels = [l for label in labels for l in label]
-    labels = autograd.Variable(torch.IntTensor(labels))
-    lengths = autograd.Variable(torch.IntTensor(lengths))
-    label_lengths = autograd.Variable(torch.IntTensor(label_lengths))
+    labels = torch.IntTensor(labels)
+    lengths = torch.IntTensor(lengths)
+    label_lengths = torch.IntTensor(label_lengths)
 
     log_probs = nn.functional.log_softmax(acts, dim=3)
     def grad_hook(grad):
         log_probs.saved_grad = grad.clone()
     log_probs.register_hook(grad_hook)
 
-    costs = fn(log_probs, labels, lengths, label_lengths)
+    costs = fn.apply(log_probs, labels, lengths, label_lengths)
     cost = torch.sum(costs)
     cost.backward()
     grads = log_probs.saved_grad
@@ -162,20 +160,20 @@ def time_test():
     acts = np.random.rand(batch_size, input_len, output_len + 1, vocab_size)
     labels = np.random.randint(1, vocab_size, (batch_size, output_len))
 
-    acts = autograd.Variable(torch.FloatTensor(acts))
+    acts = torch.FloatTensor(acts)
     lengths = [acts.shape[1]] * acts.shape[0]
     label_lengths = [len(l) for l in labels]
     labels = np.array([l for label in labels for l in label])
-    labels = autograd.Variable(torch.IntTensor(labels))
-    lengths = autograd.Variable(torch.IntTensor(lengths))
-    label_lengths = autograd.Variable(torch.IntTensor(label_lengths))
+    labels = torch.IntTensor(labels)
+    lengths = torch.IntTensor(lengths)
+    label_lengths = torch.IntTensor(label_lengths)
     log_probs = nn.functional.log_softmax(acts, dim=3)
 
     start = time.time()
     iters = 10
     for _ in range(iters):
         tfn = Transducer(blank_label=0)
-        costs = tfn(log_probs, labels, lengths, label_lengths)
+        costs = tfn.apply(log_probs, labels, lengths, label_lengths)
     end = time.time()
 
     print("Time per iteration: {:.3f}(s)".format((end-start)/iters))
