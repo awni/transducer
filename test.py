@@ -12,9 +12,9 @@ import time
 import torch
 import torch.nn as nn
 
-from transducer import Transducer, TransducerLoss
+from transducer import Transducer
 
-def wrap_and_call(fn, acts, labels):
+def apply_transducer(acts, labels):
     acts = torch.tensor(acts.astype(np.float32), requires_grad=True)
     if use_cuda:
         acts = acts.cuda()
@@ -31,7 +31,7 @@ def wrap_and_call(fn, acts, labels):
         log_probs.saved_grad = grad.clone()
     log_probs.register_hook(grad_hook)
 
-    costs = fn.apply(log_probs, labels, lengths, label_lengths)
+    costs = Transducer.apply(log_probs, labels, lengths, label_lengths)
     cost = torch.sum(costs)
     cost.backward()
     grads = log_probs.saved_grad
@@ -53,8 +53,7 @@ def small_test():
 
     acts = acts[None, ...]
 
-    tfn = Transducer(blank_label=0)
-    cost, grads = wrap_and_call(tfn, acts, labels)
+    cost, grads = apply_transducer(acts, labels)
     expected_cost = 4.495666
     expected_grads = np.array([[[-0.308198071906, -0.6918019280939998, 0.0, 0.0, 0.0],
                                 [-0.308198071906, 0.0, -0.3836038561880001, 0.0, 0.0],
@@ -142,8 +141,7 @@ def big_test():
     labels = [[1, 2],
               [1, 1]]
 
-    tfn = Transducer(blank_label=0)
-    costs, grads = wrap_and_call(tfn, activations, labels)
+    costs, grads = apply_transducer(activations, labels)
 
     assert np.allclose(costs, expected_costs), \
         "big_test average costs mismatch."
@@ -172,8 +170,7 @@ def time_test():
     start = time.time()
     iters = 10
     for _ in range(iters):
-        tfn = Transducer(blank_label=0)
-        costs = tfn.apply(log_probs, labels, lengths, label_lengths)
+        costs = Transducer.apply(log_probs, labels, lengths, label_lengths)
     end = time.time()
 
     print("Time per iteration: {:.3f}(s)".format((end-start)/iters))

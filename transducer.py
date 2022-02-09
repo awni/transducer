@@ -1,24 +1,12 @@
 from __future__ import division
 
 import torch
-from torch.autograd import Function
 import transducer_cpp
 
-class Transducer(Function):
-
-    def __init__(self, blank_label=None):
-        """
-        Constructor for Transducer cost.
-
-        Arguments:
-            blank_label (optional) (Int): Integer representing the index
-                of the blank, defaults to `alphabet_size - 1`.
-        """
-        super(Transducer, self).__init__()
-        self.blank_label = blank_label
+class Transducer(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, log_probs, labels, lengths, label_lengths):
+    def forward(ctx, log_probs, labels, lengths, label_lengths, blank=0):
         """
         Computes the Transducer cost for a minibatch of examples.
 
@@ -32,6 +20,7 @@ class Transducer(Function):
                 for each example.
             label_lengths (IntTensor): 1D tensor of label lengths for
                 each example.
+            blank (int, optional): Integer id of blank label (default is 0).
 
         Returns:
             costs (FloatTensor): .
@@ -44,13 +33,9 @@ class Transducer(Function):
         costs = torch.zeros(log_probs.shape[0])
         grads = log_probs.new(log_probs.shape).zero_()
 
-        blank_label = 0#self.blank_label
-        if blank_label is None:
-            blank_label = log_probs.shape[-1] - 1
-
         transducer_cpp.transduce(log_probs, labels,
                              lengths, label_lengths,
-                             costs, grads, blank_label)
+                             costs, grads, blank)
         if is_cuda:
             costs = costs.cuda()
             grads = grads.cuda()
@@ -60,27 +45,17 @@ class Transducer(Function):
 
     @staticmethod
     def backward(ctx, cost):
-        return ctx.saved_tensors[0], None, None, None
+        return ctx.saved_tensors[0], None, None, None, None
 
-class TransducerLoss(Transducer):
-    def __init__(self, size_average=True, blank_label=None):
-        super(TransducerLoss, self).__init__(blank_label)
-        self.size_average = size_average
+class TransducerLoss(torch.nn.Module):
+    def __init__(self, blank=0, reduction='none'):
+        super(TransducerLoss, self).__init__()
+        self.blank = blank
+        # TODO, reduction is currently unused
+        self.reduction = reduction
 
-    def forward(self, *args):
-        parent = super(TransducerLoss, self)
-        costs = parent.forward(*args)
-        cost = torch.sum(costs)
-        if self.size_average:
-            cost = cost / costs.shape[0]
-        return costs.new((cost,))
-
-    def backward(self, *args):
-        parent = super(TransducerLoss, self)
-        grads = parent.backward(*args)[0]
-        if self.size_average:
-            grads = grads / grads.shape[0]
-        return grads, None, None, None
+    def forward(self, log_probs, labels, lengths, label_lengths):
+        return Transducer.apply(log_probs, labels, lenghts, label_lengths, self.blank)
 
 def check_type(var, t, name):
     if var.dtype is not t:
