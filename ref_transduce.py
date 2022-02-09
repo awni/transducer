@@ -58,41 +58,36 @@ def forward_pass(log_probs, labels, blank):
     loglike = alphas[T-1, U-1] + log_probs[T-1, U-1, blank]
     return alphas, loglike
 
-def backward_pass(log_probs, labels, blank):
+def compute_gradient(log_probs, alphas, labels, blank):
 
     T, U, _ = log_probs.shape
-    betas = np.zeros((T, U))
-    betas[T-1, U-1] = log_probs[T-1, U-1, blank]
+    dalphas = np.zeros((T, U))
+    dalphas[T-1, U-1] = -1.0
+    grads = np.zeros(log_probs.shape)
+    grads[T-1, U-1, blank] = dalphas[T-1, U-1]
 
     for t in reversed(range(T-1)):
-        betas[t, U-1] = betas[t+1, U-1] + log_probs[t, U-1, blank]
+        da = alphas[t, U-1] + log_probs[t, U-1, blank] - alphas[t+1, U-1]
+        da = dalphas[t+1, U-1] * math.exp(da)
+        dalphas[t, U-1] = da
+        grads[t, U-1, blank] = da
 
     for u in reversed(range(U-1)):
-        betas[T-1, u] = betas[T-1, u+1] + log_probs[T-1, u, labels[u]]
+        da = alphas[T-1, u] + log_probs[T-1, u, labels[u]] - alphas[T-1, u+1]
+        da = dalphas[T-1, u+1] * math.exp(da)
+        dalphas[T-1, u] = da
+        grads[T-1, u, labels[u]] = da
 
     for t in reversed(range(T-1)):
         for u in reversed(range(U-1)):
-            no_emit = betas[t+1, u] + log_probs[t, u, blank]
-            emit = betas[t, u+1] + log_probs[t, u, labels[u]]
-            betas[t, u] = logsumexp(emit, no_emit)
+            no_emit = dalphas[t+1, u] * math.exp(
+                alphas[t, u] + log_probs[t, u, blank] - alphas[t+1, u])
+            grads[t, u, blank] = no_emit
+            emit = dalphas[t, u+1] * math.exp(
+                alphas[t, u] + log_probs[t, u, labels[u]] - alphas[t, u+1])
+            grads[t, u, labels[u]] = emit
+            dalphas[t, u] = emit + no_emit
 
-    return betas, betas[0, 0]
-
-def compute_gradient(log_probs, alphas, betas, labels, blank):
-    T, U, _ = log_probs.shape
-    grads = np.full(log_probs.shape, -float("inf"))
-    log_like = betas[0, 0]
-
-    grads[T-1, U-1, blank] = alphas[T-1, U-1]
-
-    grads[:T-1, :, blank] = alphas[:T-1, :] + betas[1:, :]
-    for u, l in enumerate(labels):
-        grads[:, u, l] = alphas[:, u] + betas[:, u+1]
-
-    grads = grads + log_probs - log_like
-    grads = np.exp(grads)
-
-    grads = -grads
     return grads
 
 def transduce(log_probs, labels, blank=0):
@@ -107,8 +102,7 @@ def transduce(log_probs, labels, blank=0):
                     unnormalized input actications
     """
     alphas, ll_forward = forward_pass(log_probs, labels, blank)
-    betas, ll_backward = backward_pass(log_probs, labels, blank)
-    grads = compute_gradient(log_probs, alphas, betas, labels, blank)
+    grads = compute_gradient(log_probs, alphas, labels, blank)
     return -ll_forward, grads
 
 def transduce_batch(log_probs, labels, blank=0):
@@ -130,13 +124,7 @@ def test():
 
     log_probs = log_softmax(inputs, axis=2)
     alphas, ll_forward = forward_pass(log_probs, labels, blank)
-    betas, ll_backward = backward_pass(log_probs, labels, blank)
-
-    assert np.allclose(ll_forward, ll_backward,
-                       atol=1e-12, rtol=1e-12), \
-      "Loglikelihood from forward and backward pass mismatch."
-
-    grads = compute_gradient(log_probs, alphas, betas, labels, blank)
+    grads = compute_gradient(log_probs, alphas, labels, blank)
     neg_loglike = -ll_forward
     num_grads = numerical_gradient(log_probs, labels, neg_loglike, blank)
     assert np.allclose(grads, num_grads,
@@ -167,6 +155,17 @@ def small_test():
     blank = 0
     log_probs = log_softmax(acts, axis=2)
     ll, grads = transduce(log_probs, labels, blank)
+    expected_ll = 4.495666
+    expected_grads = np.array([[[-0.308198071906, -0.6918019280939998, 0.0, 0.0, 0.0],
+                                [-0.308198071906, 0.0, -0.3836038561880001, 0.0, 0.0],
+                                [-0.3836038561880001, 0.0, 0.0, 0.0, 0.0]],
+                               [[0.0, -0.308198071906, 0.0, 0.0, 0.0],
+                                [0.0, 0.0, -0.6163961438119995, 0.0, 0.0],
+                                [-0.9999999999999991, 0.0, 0.0, 0.0, 0.0]]])
+    assert np.allclose(ll, expected_ll, rtol=1e-6), \
+        "small_test costs mismatch."
+    assert np.allclose(grads, expected_grads), \
+        "small_test gradient mismatch."
 
 def big_test():
 

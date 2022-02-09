@@ -33,7 +33,7 @@ float cost_and_grad_single(float* log_probs, float* grads,
                            int* labels, int blank, int T,
                            int U, int V, int s) {
     // Forward pass
-    float *alphas = (float *) malloc(T * U * sizeof(float));
+    float* alphas = (float* ) malloc(T * U * sizeof(float));
     alphas[0] = 0;
     for (int t = 1; t < T; t++) {
         alphas[idx2(t, 0, U)] = alphas[idx2(t-1, 0, U)] + log_probs[idx3(t-1, 0, blank, s, V)];
@@ -53,57 +53,40 @@ float cost_and_grad_single(float* log_probs, float* grads,
     float forward_ll = alphas[idx2(T-1, U-1, U)] + log_probs[idx3(T-1, U-1, blank, s, V)];
 
     // Backward pass
-    float *betas = (float *) malloc(T * U * sizeof(float));
-    betas[idx2(T-1, U-1, U)] = log_probs[idx3(T-1, U-1, blank, s, V)];
+    float* dalphas = (float* ) malloc(T * U * sizeof(float));
+    dalphas[idx2(T-1, U-1, U)] = -1.0;
+    grads[idx3(T-1, U-1, blank, s, V)] = -1.0;
+
     for (int t = T-2; t >= 0; t--) {
-        betas[idx2(t, U-1, U)] = betas[idx2(t+1, U-1, U)] + log_probs[idx3(t, U-1, blank, s, V)];
+        float g = std::exp(
+            alphas[idx2(t, U-1, U)] + log_probs[idx3(t, U-1, blank, s, V)] - alphas[idx2(t+1, U-1, U)]);
+        g *= dalphas[idx2(t+1, U-1, U)];
+        dalphas[idx2(t, U-1, U)] = g;
+        grads[idx3(t, U-1, blank, s, V)] = g;
     }
     for (int u = U-2; u >= 0; u--) {
-        betas[idx2(T-1, u, U)] = betas[idx2(T-1, u+1, U)] + log_probs[idx3(T-1, u, labels[u], s, V)];
+        float g = std::exp(
+            alphas[idx2(T-1, u, U)] + log_probs[idx3(T-1, u, labels[u], s, V)] - alphas[idx2(T-1, u+1, U)]);
+        g *= dalphas[idx2(T-1, u+1, U)];
+        dalphas[idx2(T-1, u, U)] = g;
+        grads[idx3(T-1, u, labels[u], s, V)] = g;
     }
 
     for (int t = T-2; t >= 0; t--) {
         for (int u = U-2; u >= 0; u--) {
-            float no_emit = betas[idx2(t+1, u, U)] + log_probs[idx3(t, u, blank, s, V)];
-            float emit = betas[idx2(t, u+1, U)] + log_probs[idx3(t, u, labels[u], s, V)];
-            betas[idx2(t, u, U)] = log_sum_exp(emit, no_emit);
-        }
-    }
-    float backward_ll = betas[0];
-
-    float diff = fabs(backward_ll - forward_ll);
-    float diff_tol = fmax(1e-6 * fabs(forward_ll), 1e-8);
-    if (diff > diff_tol) {
-        printf("WARNING: Forward backward likelihood mismatch %f\n", diff);
-    }
-
-    // Gradients w.r.t. log probabilities
-    grads[idx3(T-1, U-1, blank, s, V)] = alphas[idx2(T-1, U-1, U)];
-    for (int t = 0; t < T-1; t++) {
-        for (int u = 0; u < U; u++) {
-            grads[idx3(t, u, blank, s, V)] = alphas[idx2(t, u, U)] + betas[idx2(t+1, u, U)];
-        }
-    }
-    for (int t = 0; t < T; t++) {
-        for (int u = 0; u < U - 1; u++) {
-            int l = labels[u];
-            grads[idx3(t, u, l, s, V)] = alphas[idx2(t, u, U)] + betas[idx2(t, u+1, U)];
-        }
-    }
-    for (int t = 0; t < T; t++) {
-        for (int u = 0; u < U; u++) {
-            for (int v = 0; v < V; v++) {
-                float g = grads[idx3(t, u, v, s, V)];
-                if (g != 0) {
-                    grads[idx3(t, u, v, s, V)] = -exp(-forward_ll + g + log_probs[idx3(t, u, v, s, V)]);
-                }
-            }
+            float no_emit = dalphas[idx2(t+1, u, U)] * std::exp(
+                alphas[idx2(t, u, U)] + log_probs[idx3(t, u, blank, s, V)] - alphas[idx2(t+1, u, U)]);
+            float emit = dalphas[idx2(t, u+1, U)] * std::exp(
+                alphas[idx2(t, u, U)] + log_probs[idx3(t, u, labels[u], s, V)] - alphas[idx2(t, u+1, U)]);
+            grads[idx3(t, u, blank, s, V)] = no_emit;
+            grads[idx3(t, u, labels[u], s, V)] = emit;
+            dalphas[idx2(t, u, U)] = no_emit + emit;
         }
     }
 
     // Cleanup
     free(alphas);
-    free(betas);
+    free(dalphas);
 
     return -forward_ll;
 }
@@ -128,32 +111,6 @@ void cost_and_grad(float* log_probs, float* grads,
     }
 }
 
-/*void transduce(THFloatTensor *th_log_probs,
-               THIntTensor *th_labels,
-               THIntTensor *th_input_lengths,
-               THIntTensor *th_label_lengths,
-               THFloatTensor *th_costs,
-               THFloatTensor *th_grads,
-               int blank) {
-    int batch_size = THFloatTensor_size(th_log_probs, 0);
-    int max_t = THFloatTensor_size(th_log_probs, 1);
-    int max_u = THFloatTensor_size(th_log_probs, 2);
-    int alphabet_size = THFloatTensor_size(th_log_probs, 3);
-
-    float *log_probs = THFloatTensor_data(th_log_probs);
-    int *input_lengths = THIntTensor_data(th_input_lengths);
-    int *labels = THIntTensor_data(th_labels);
-    int *label_lengths = THIntTensor_data(th_label_lengths);
-
-    float *costs = THFloatTensor_data(th_costs);
-    float *grads = THFloatTensor_data(th_grads);
-    cost_and_grad(log_probs, grads, costs,
-                  labels, label_lengths,
-                  input_lengths, batch_size,
-                  max_t, max_u,
-                  alphabet_size, blank);
-}*/
-
 void transduce(
        torch::Tensor th_log_probs,
        torch::Tensor th_labels,
@@ -169,11 +126,11 @@ void transduce(
 
     auto log_probs = th_log_probs.data_ptr<float>();
     auto input_lengths = th_input_lengths.data_ptr<int>();
-    int *labels = th_labels.data_ptr<int>();
-    int *label_lengths = th_label_lengths.data_ptr<int>();
+    int* labels = th_labels.data_ptr<int>();
+    int* label_lengths = th_label_lengths.data_ptr<int>();
 
-    float *costs = th_costs.data_ptr<float>();
-    float *grads = th_grads.data_ptr<float>();
+    float* costs = th_costs.data_ptr<float>();
+    float* grads = th_grads.data_ptr<float>();
     cost_and_grad(log_probs, grads, costs,
                   labels, label_lengths,
                   input_lengths, batch_size,
