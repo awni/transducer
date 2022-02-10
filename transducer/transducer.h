@@ -1,0 +1,15 @@
+#pragma once
+void costAndGrad(
+    float* emissions,
+    float* predictions,
+    float* egrads,
+    float* pgrads,
+    float* costs,
+    int* labels,
+    int* inputLengths,
+    int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize,
+    int blank);
