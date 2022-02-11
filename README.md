@@ -1,20 +1,22 @@
 # transducer
-A Fast Sequence Transducer Implementation with PyTorch Bindings. The corresponding publication is [Sequence Transduction with Recurrent Neural Networks](https://arxiv.org/abs/1211.3711).
 
-Tested with Python 3.7 and PyTorch 1.3
+A Fast Sequence Transducer Implementation with python bindings and a PyTorch
+extension. The corresponding publication is [Sequence Transduction with
+Recurrent Neural Networks](https://arxiv.org/abs/1211.3711).
+
+The code has been tested with Python 3.9. and PyTorch 1.9.
 
 ## Install and Test
 
-First install [PyTorch](http://pytorch.org/) then from the top level of the
-repo run
+To install from the top level of the repo run:
 
 ```
 python setup.py install
 ```
 
-And test with
+To use the PyTorch extension, install [PyTorch](http://pytorch.org/)
+and test with:
 
 ```
-python test.py
+python torch_test.py
 ```
-
