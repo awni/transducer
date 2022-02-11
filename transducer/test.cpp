@@ -32,35 +32,75 @@ void checkClose(
   }
 }
 
-void tinyTest() {
-  std::vector<float> emissions = {1.0, 2.0, 3.0, 4.0};
-  std::vector<float> predictions = {1.0, 2.0};
+void testForwardBackward(
+    const std::vector<float>& emissions,
+    const std::vector<float>& predictions,
+    const std::vector<int>& labels,
+    const std::vector<int>& inputLengths,
+    const std::vector<int>& labelLengths,
+    int alphabetSize,
+    const std::vector<float>& expectedCosts,
+    const std::vector<float>& expectedEgrads,
+    const std::vector<float>& expectedPgrads) {
 
-  float cost;
-  std::vector<float> egrads(emissions.size(), 0.0);
-  std::vector<float> pgrads(predictions.size(), 0.0);
-  int inputLengths = 2;
-  int labelLengths = 0;
-  int batchSize = 1;
-  int maxLabelLength = 1;
-  int maxInputLength = 2;
-  int alphabetSize = 2;
+  int maxInputLength = *std::max_element(
+      inputLengths.begin(), inputLengths.end());
+  int maxLabelLength = *std::max_element(
+      labelLengths.begin(), labelLengths.end()) + 1;
+  int batchSize = emissions.size() / (alphabetSize * maxInputLength);
   int blank = 0;
 
-  costAndGrad(
+  std::vector<float> costs(batchSize);
+  std::vector<float> alphas(batchSize * maxLabelLength * maxInputLength);
+  std::vector<float> logNorms(batchSize * maxLabelLength * maxInputLength);
+
+  forward(
       emissions.data(),
       predictions.data(),
-      egrads.data(),
-      pgrads.data(),
-      &cost,
-      nullptr,
-      &inputLengths,
-      &labelLengths,
+      costs.data(),
+      alphas.data(),
+      logNorms.data(),
+      labels.data(),
+      inputLengths.data(),
+      labelLengths.data(),
       batchSize,
       maxInputLength,
       maxLabelLength,
       alphabetSize,
-      blank);
+      blank,
+      false);
+
+  checkClose(costs, expectedCosts);
+
+  std::vector<float> egrads(emissions.size());
+  std::vector<float> pgrads(predictions.size());
+  backward(
+      emissions.data(),
+      predictions.data(),
+      egrads.data(),
+      pgrads.data(),
+      alphas.data(),
+      logNorms.data(),
+      labels.data(),
+      inputLengths.data(),
+      labelLengths.data(),
+      batchSize,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize,
+      blank,
+      false);
+
+  checkClose(egrads, expectedEgrads);
+  checkClose(pgrads, expectedPgrads);
+}
+
+void tinyTest() {
+  std::vector<float> emissions = {1.0, 2.0, 3.0, 4.0};
+  std::vector<float> predictions = {1.0, 2.0};
+  int inputLength = 2;
+  int labelLength = 0;
+  int alphabetSize = 2;
 
   auto logNorm1 = std::log(
       std::exp(emissions[0] + predictions[0]) +
@@ -71,7 +111,7 @@ void tinyTest() {
   float expectedCost = -(
       emissions[0] + predictions[0] - logNorm1 +
       emissions[2] + predictions[0] - logNorm2);
-  checkClose(cost, expectedCost);
+
   auto norm1 = std::exp(logNorm1);
   auto norm2 = std::exp(logNorm2);
   std::vector<float> expectedEgrads =
@@ -82,8 +122,17 @@ void tinyTest() {
   std::vector<float> expectedPgrads =
     {expectedEgrads[0] + expectedEgrads[2],
      expectedEgrads[1] + expectedEgrads[3]};
-  checkClose(egrads, expectedEgrads);
-  checkClose(pgrads, expectedPgrads);
+
+  testForwardBackward(
+      emissions,
+      predictions,
+      {},
+      {inputLength},
+      {labelLength},
+      alphabetSize,
+      {expectedCost},
+      expectedEgrads,
+      expectedPgrads);
 }
 
 void smallTest() {
@@ -95,33 +144,10 @@ void smallTest() {
     {0.1, 0.6, 0.1, 0.1, 0.1,
      0.1, 0.1, 0.6, 0.1, 0.1,
      0.1, 0.1, 0.2, 0.8, 0.1};
-
   std::vector<int> labels = {1, 2};
-  float cost;
-  std::vector<float> egrads(emissions.size(), 0.0);
-  std::vector<float> pgrads(predictions.size(), 0.0);
   int inputLength = 2;
   int labelLength = 2;
-  int batchSize = 1;
-  int maxLabelLength = 3;
-  int maxInputLength = 2;
   int alphabetSize = 5;
-  int blank = 0;
-
-  costAndGrad(
-      emissions.data(),
-      predictions.data(),
-      egrads.data(),
-      pgrads.data(),
-      &cost,
-      labels.data(),
-      &inputLength,
-      &labelLength,
-      batchSize,
-      maxInputLength,
-      maxLabelLength,
-      alphabetSize,
-      blank);
 
   float expectedCost = 4.843925;
   std::vector<float> expectedEgrads =
@@ -131,13 +157,21 @@ void smallTest() {
     {-0.07572315633296967, -0.5175057649612427, 0.2010551244020462, 0.19608692824840546, 0.19608692824840546,
      -0.1768123358488083, 0.30765989422798157, -0.5961406826972961, 0.23264653980731964, 0.23264653980731964,
      -1.1112537384033203, 0.2380295693874359, 0.24793916940689087, 0.41780781745910645, 0.20747721195220947};
-  checkClose(cost, expectedCost);
-  checkClose(egrads, expectedEgrads);
-  checkClose(pgrads, expectedPgrads);
+
+  testForwardBackward(
+      emissions,
+      predictions,
+      labels,
+      {inputLength},
+      {labelLength},
+      alphabetSize,
+      {expectedCost},
+      expectedEgrads,
+      expectedPgrads);
 }
 
 void bigTest() {
-  // minibatch x T x alphabet_size
+  // batchSize x maxInputLength x alphabetSize
   std::vector<float> emissions =
     {0.8764081559029704, 0.8114401931890338, 0.6508828493896047,
      0.6831969720272136, 0.794939425350507, 0.4771495462110181,
@@ -149,7 +183,7 @@ void bigTest() {
      0.2291088288701465, 0.7524300104847589, 0.7273355024795244,
      0.33155408518920104, 0.8068789770558062, 0.6188633401048291};
 
-  // minibatch x U x alphabet_size
+  // batchSize x maxLabelLength x alphabetSize
   std::vector<float> predictions =
     {0.6223532638505989, 0.3002940148933876, 0.7404674033386307,
      0.01823584315362603, 0.034963374948701054, 0.34892745941957193,
@@ -160,32 +194,9 @@ void bigTest() {
      0.37187505831579304, 0.960974111779922, 0.04504344671276461};
 
   std::vector<int> labels = {1, 2, 1, 1};
-
-  int batchSize = 2;
-  std::vector<float> costs(batchSize);
-  std::vector<float> egrads(emissions.size(), 0.0);
-  std::vector<float> pgrads(predictions.size(), 0.0);
   std::vector<int> inputLengths = {4, 4};
   std::vector<int> labelLengths = {2, 2};
-  int maxLabelLength = 3;
-  int maxInputLength = 4;
   int alphabetSize = 3;
-  int blank = 0;
-
-  costAndGrad(
-      emissions.data(),
-      predictions.data(),
-      egrads.data(),
-      pgrads.data(),
-      costs.data(),
-      labels.data(),
-      inputLengths.data(),
-      labelLengths.data(),
-      batchSize,
-      maxInputLength,
-      maxLabelLength,
-      alphabetSize,
-      blank);
 
   std::vector<float> expectedCosts = {4.718404769897461, 4.803375244140625};
   std::vector<float> expectedEgrads =
@@ -208,9 +219,16 @@ void bigTest() {
      -0.4294244050979614, 0.07082393765449524, 0.3586004972457886,
      -1.4029310941696167, 1.0439238548278809, 0.35900723934173584};
 
-  checkClose(costs, expectedCosts);
-  checkClose(egrads, expectedEgrads);
-  checkClose(pgrads, expectedPgrads);
+  testForwardBackward(
+      emissions,
+      predictions,
+      labels,
+      inputLengths,
+      labelLengths,
+      alphabetSize,
+      expectedCosts,
+      expectedEgrads,
+      expectedPgrads);
 }
 
 int main() {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "transducer_cpu.h"
+namespace cpu {
 
 void forward(
     const float* emissions,
@@ -15,8 +15,7 @@ void forward(
     int maxInputLength,
     int maxLabelLength,
     int alphabetSize,
-    int blank,
-    bool useCuda);
+    int blank);
 
 void backward(
     const float* emissions,
@@ -32,5 +31,6 @@ void backward(
     int maxInputLength,
     int maxLabelLength,
     int alphabetSize,
-    int blank,
-    bool useCuda);
+    int blank);
+
+} // namespace cpu

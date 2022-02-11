@@ -21,6 +21,8 @@ set(
   TRANSDUCER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/transducer.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/transducer.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/transducer_cpu.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/transducer_cpu.h
 )
 
 add_library(transducer ${TRANSDUCER_SOURCES})
