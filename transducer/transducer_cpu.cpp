@@ -1,6 +1,6 @@
 #include "transducer_cpu.h"
 
-#if defined(OPENMP)
+#if defined(_OPENMP_)
 #include <omp.h>
 #endif
 

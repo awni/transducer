@@ -28,15 +28,15 @@ set(
 add_library(transducer ${TRANSDUCER_SOURCES})
 
 if(OpenMP_CXX_FOUND)
-  #    add_definitions(-D_CUDA_)
+    add_definitions(-D_OPENMP_)
     target_link_libraries(transducer PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 if (TRANSDUCER_BUILD_TESTS)
     add_executable(test test.cpp)
     target_link_libraries(test PRIVATE transducer)
-#    add_executable(benchmarks benchmarks.cpp)
-#    target_link_libraries(benchmarks PRIVATE transducer)
+    add_executable(benchmark benchmark.cpp)
+    target_link_libraries(benchmark PRIVATE transducer)
 endif()
 
 if (TRANSDUCER_BUILD_PYTHON_BINDINGS)
