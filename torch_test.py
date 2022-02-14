@@ -17,7 +17,6 @@ def apply_transducer(emissions, predictions, labels, use_cuda=False):
 
   lengths = [emissions.shape[1]] * emissions.shape[0]
   label_lengths = [len(l) for l in labels]
-  labels = [l for label in labels for l in label]
   labels = torch.tensor(labels, dtype=torch.int32,  device=device)
   lengths = torch.tensor(lengths, dtype=torch.int32, device=device)
   label_lengths = torch.tensor(

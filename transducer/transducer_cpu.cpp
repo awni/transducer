@@ -27,14 +27,6 @@ inline int idx2(int t, int u, int U) {
   return t * U + u;
 }
 
-int cumsum(const int *lens, int num) {
-  int sum = 0;
-  for (int i = 0; i < num; i++) {
-    sum += lens[i];
-  }
-  return sum;
-}
-
 void computeLogNorms(
     float* logNorms,
     const float* emissions,
@@ -205,7 +197,7 @@ void forward(
     int U = labelLengths[mb] + 1; // Length of transcription
     int eOffset = mb * maxInputLength * alphabetSize;
     int pOffset = mb * maxLabelLength * alphabetSize;
-    int labelOffset = cumsum(labelLengths, mb);
+    int labelOffset = mb * (maxLabelLength - 1);
     costs[mb] = forwardSingle(
         emissions + eOffset,
         predictions + pOffset,
@@ -237,7 +229,7 @@ void backward(
     int U = labelLengths[mb] + 1; // Length of transcription
     int eOffset = mb * maxInputLength * alphabetSize;
     int pOffset = mb * maxLabelLength * alphabetSize;
-    int labelOffset = cumsum(labelLengths, mb);
+    int labelOffset = mb * (maxLabelLength - 1);
     memset(
         (void*)(egrads + eOffset),
         0,

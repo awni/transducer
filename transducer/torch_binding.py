@@ -15,8 +15,9 @@ class Transducer(torch.autograd.Function):
                 be of shape (minibatch, input length, vocab size).
             predictions (FloatTensor): Unnormalized prediction scores should
                 be of shape (minibatch, output length + 1, vocab size).
-            labels (IntTensor): 1D tensor of labels for each example
-                consecutively.
+            labels (IntTensor): 2D tensor of labels for each example of shape
+                (minibatch, output length), shorter labels are padded to the
+                length of the longest label.
             input_lengths (IntTensor): 1D tensor of number actviation time-steps
                 for each example.
             label_lengths (IntTensor): 1D tensor of label lengths for
@@ -101,30 +102,34 @@ def check_dim(var, dim, name):
         raise ValueError("{} must be {}D".format(name, dim))
 
 
-def certify_inputs(emissions, predictions, labels, lengths, label_lengths):
+def certify_inputs(emissions, predictions, labels, input_lengths, label_lengths):
     check_type(emissions, torch.float32, "emissions")
     check_type(predictions, torch.float32, "predictions")
     check_type(labels, torch.int32, "labels")
+    check_type(input_lengths, torch.int32, "input_lengths")
     check_type(label_lengths, torch.int32, "label_lengths")
-    check_type(lengths, torch.int32, "lengths")
     check_contiguous(labels, "labels")
     check_contiguous(label_lengths, "label_lengths")
-    check_contiguous(lengths, "lengths")
+    check_contiguous(input_lengths, "lengths")
 
+    batchSize = emissions.shape[0]
     if emissions.shape[2] != predictions.shape[2]:
         raise ValueError("vocab size mismatch.")
-
-    if lengths.shape[0] != emissions.shape[0]:
+    if input_lengths.shape[0] != batchSize:
         raise ValueError("must have a length per example.")
-    if label_lengths.shape[0] != emissions.shape[0]:
+    if label_lengths.shape[0] != batchSize:
         raise ValueError("must have a label length per example.")
+    if labels.shape[0] != batchSize:
+        raise ValueError("must have a label per example.")
+    if labels.shape[1] != (predictions.shape[1] - 1):
+        raise ValueError("labels must be padded to maximum label length.")
 
     check_dim(emissions, 3, "emissions")
     check_dim(predictions, 3, "predictions")
-    check_dim(labels, 1, "labels")
-    check_dim(lengths, 1, "lenghts")
+    check_dim(labels, 2, "labels")
+    check_dim(input_lengths, 1, "input_lenghts")
     check_dim(label_lengths, 1, "label_lenghts")
-    max_T = torch.max(lengths)
+    max_T = torch.max(input_lengths)
     max_U = torch.max(label_lengths)
     T = emissions.shape[1]
     U = predictions.shape[1]

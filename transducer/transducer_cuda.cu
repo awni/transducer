@@ -129,20 +129,12 @@ void forwardKernel(
   predictions += maxU * V * mb;
   logNorms += maxT * maxU * mb;
   alphas += maxT * maxU * mb;
+  labels += (maxU - 1) * mb;
 
-  __shared__ int labelOffset; 
   if (tidx == 0) {
-    labelOffset = 0;
     alphas[0] = 0.0f;
   }
   __syncthreads();
-
-  // Compute label offset for the batch
-  for (int i = tidx; i < mb; i+= blockDim.x) {
-    atomicAdd(&labelOffset, labelLengths[i]);
-  }
-  __syncthreads();
-  labels += labelOffset;
 
   // Compute label offset
   for (int i = 1; i < T; ++i) {
