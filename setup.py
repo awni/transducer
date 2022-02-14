@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from setuptools import Extension, setup
@@ -15,10 +16,14 @@ class CMakeExtension(Extension):
         Extension.__init__(self, name, sources=[])
 
 
+def get_cmake():
+    return "cmake3" if shutil.which("cmake3") is not None else "cmake"
+
+
 class CMakeBuild(build_ext):
     def run(self):
         try:
-            out = subprocess.check_output(["cmake", "--version"])
+            out = subprocess.check_output([get_cmake(), "--version"])
         except OSError:
             raise RuntimeError(
                 "CMake must be installed to build the following extensions: "
@@ -59,11 +64,12 @@ class CMakeBuild(build_ext):
         )
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)
+        cmake = get_cmake()
         subprocess.check_call(
-            ["cmake", srcdir] + cmake_args, cwd=self.build_temp, env=env
+            [cmake, srcdir] + cmake_args, cwd=self.build_temp, env=env
         )
         subprocess.check_call(
-            ["cmake", "--build", "."] + build_args, cwd=self.build_temp
+            [cmake, "--build", "."] + build_args, cwd=self.build_temp
         )
 
 
