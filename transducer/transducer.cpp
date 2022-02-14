@@ -1,4 +1,9 @@
 #include "transducer.h"
+#include "transducer_cpu.h"
+
+#if defined(_CUDA_)
+#include "transducer_cuda.h"
+#endif
 
 void forward(
     const float* emissions,
@@ -16,7 +21,24 @@ void forward(
     int blank,
     bool useCuda) {
   if (useCuda) {
-    // TODO
+#if defined(_CUDA_)
+    cuda::forward(
+        emissions,
+        predictions,
+        costs,
+        alphas,
+        logNorms,
+        labels,
+        inputLengths,
+        labelLengths,
+        batchSize,
+        maxInputLength,
+        maxLabelLength,
+        alphabetSize,
+        blank);
+#else
+    throw std::invalid_argument("Transducer not built with CUDA.");
+#endif
   } else {
     cpu::forward(
         emissions,
@@ -52,7 +74,25 @@ void backward(
     int blank,
     bool useCuda) {
   if (useCuda) {
-    // TODO
+#if defined(_CUDA_)
+    cuda::backward(
+        emissions,
+        predictions,
+        egrads,
+        pgrads,
+        alphas,
+        logNorms,
+        labels,
+        inputLengths,
+        labelLengths,
+        batchSize,
+        maxInputLength,
+        maxLabelLength,
+        alphabetSize,
+        blank);
+#else
+    throw std::invalid_argument("Transducer not built with CUDA.");
+#endif
   } else {
     cpu::backward(
         emissions,

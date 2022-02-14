@@ -1,37 +1,8 @@
 #include <algorithm>
 #include <cmath>
-#include <iostream>
-#include <vector>
 
+#include "test.h"
 #include "transducer.h"
-
-#define TEST(func) \
-    std::cout << "Testing " << #func << "..."; \
-    try { \
-        func(); \
-        std::cout << "passed!" << std::endl; \
-    } catch (...) { \
-        std::cout << "FAILED!" << std::endl; \
-    }
-
-void checkClose(float a, float b, float rtol=1e-6, float atol=1e-5) {
-  auto thresh = std::max<float>(rtol * std::max<float>(a, b), atol);
-  if (std::abs(a - b) > thresh) {
-    throw "";
-  }
-}
-
-void checkClose(
-    const std::vector<float>& a,
-    const std::vector<float>& b,
-    float rtol=1e-6, float atol=1e-5) {
-  if (a.size() != b.size()) {
-    throw "";
-  }
-  for (int i = 0; i < a.size(); ++i) {
-    checkClose(a[i], b[i], rtol, atol);
-  }
-}
 
 void testForwardBackward(
     const std::vector<float>& emissions,

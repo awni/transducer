@@ -28,15 +28,36 @@ set(
 add_library(transducer ${TRANSDUCER_SOURCES})
 
 if(OpenMP_CXX_FOUND)
-    add_definitions(-D_OPENMP_)
-    target_link_libraries(transducer PUBLIC OpenMP::OpenMP_CXX)
+  add_definitions(-D_OPENMP_)
+  target_link_libraries(transducer PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+if(CUDA_FOUND)
+  add_definitions(-D_CUDA_)
+  include_directories(${CUDA_INCLUDE_DIRS})
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 14)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-arch=sm_80>)
+  target_sources(
+    transducer
+    PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/transducer_cuda.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/transducer_cuda.h
+  )
 endif()
 
 if (TRANSDUCER_BUILD_TESTS)
-    add_executable(test test.cpp)
-    target_link_libraries(test PRIVATE transducer)
-    add_executable(benchmark benchmark.cpp)
-    target_link_libraries(benchmark PRIVATE transducer)
+  add_executable(test test.cpp)
+  target_link_libraries(test PRIVATE transducer)
+  add_executable(benchmark benchmark.cpp)
+  target_link_libraries(benchmark PRIVATE transducer)
+  if (CUDA_FOUND)
+    add_executable(test_cuda test_cuda.cu)
+    target_link_libraries(test_cuda PRIVATE transducer)
+    add_executable(benchmark_cuda benchmark_cuda.cu)
+    target_link_libraries(benchmark_cuda PRIVATE transducer)
+  endif()
 endif()
 
 if (TRANSDUCER_BUILD_PYTHON_BINDINGS)

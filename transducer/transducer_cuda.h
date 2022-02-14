@@ -1,5 +1,27 @@
 #pragma once
 
+#include <sstream>
+#include <cuda.h>
+#include <cuda_runtime.h>
+
+#define CUDA_CHECK(err) \
+  cuda::cudaCheck(err, __FILE__, __LINE__)
+
+namespace cuda {
+
+void cudaCheck(cudaError_t err, const char* file, int line);
+
+void computeLogNorms(
+    const float* emissions,
+    const float* predictions,
+    float* logNorms,
+    const int* inputLengths,
+    const int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize);
+
 void forward(
     const float* emissions,
     const float* predictions,
@@ -13,8 +35,7 @@ void forward(
     int maxInputLength,
     int maxLabelLength,
     int alphabetSize,
-    int blank,
-    bool useCuda);
+    int blank);
 
 void backward(
     const float* emissions,
@@ -30,5 +51,6 @@ void backward(
     int maxInputLength,
     int maxLabelLength,
     int alphabetSize,
-    int blank,
-    bool useCuda);
+    int blank);
+
+} // namespace cuda
