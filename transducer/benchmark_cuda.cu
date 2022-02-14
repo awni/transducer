@@ -142,8 +142,8 @@ void timeTransducer(int B, int T, int U, int V) {
 
 int main() {
   int B = 16;
-  int T = 5000;
-  int U = 200;
-  int V = 1000;
+  int T = 150;
+  int U = 40;
+  int V = 5000;
   timeTransducer(B, T, U, V);
 }

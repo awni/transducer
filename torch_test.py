@@ -28,6 +28,7 @@ def apply_transducer(emissions, predictions, labels, use_cuda=False):
     torch.sum(costs).backward()
     return costs.cpu(), emissions.grad.cpu(), predictions.grad.cpu()
 
+
 class TestTransducerLoss(unittest.TestCase):
 
     def small_test():
@@ -40,7 +41,6 @@ class TestTransducerLoss(unittest.TestCase):
               [0.1, 0.1, 0.2, 0.8, 0.1]]]
         labels = [[1, 2]]
 
-        cost, egrads, pgrads = apply_transducer(emissions, predictions, labels)
         expected_cost = torch.tensor([4.843925], dtype=torch.float32)
         expected_egrads = torch.tensor(
             [[[-0.6884234547615051, -0.05528555065393448, 0.0728120282292366, 0.3593204915523529, 0.3115764856338501],
@@ -52,9 +52,17 @@ class TestTransducerLoss(unittest.TestCase):
               [-1.1112537384033203, 0.2380295693874359, 0.24793916940689087, 0.41780781745910645, 0.20747721195220947]]],
             dtype=torch.float32)
 
+        cost, egrads, pgrads = apply_transducer(emissions, predictions, labels)
         self.assertTrue(torch.allclose(cost, expected_cost))
         self.assertTrue(torch.allclose(egrads, expected_egrads))
         self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+
+        if torch.cuda.is_available():
+          cost, egrads, pgrads = apply_transducer(
+              emissions, predictions, labels, use_cuda=True)
+          self.assertTrue(torch.allclose(cost, expected_cost))
+#          self.assertTrue(torch.allclose(egrads, expected_egrads))
+#          self.assertTrue(torch.allclose(pgrads, expected_pgrads))
 
     def big_test():
 
@@ -83,8 +91,6 @@ class TestTransducerLoss(unittest.TestCase):
         labels = [[1, 2],
                   [1, 1]]
 
-        costs, egrads, pgrads = apply_transducer(emissions, predictions, labels)
-
         expected_costs = torch.tensor(
             [4.718404769897461, 4.803375244140625], dtype=torch.float32)
         expected_egrads = torch.tensor(
@@ -109,9 +115,17 @@ class TestTransducerLoss(unittest.TestCase):
               [-1.4029310941696167, 1.0439238548278809, 0.35900723934173584]]],
              dtype=torch.float32)
 
+        costs, egrads, pgrads = apply_transducer(emissions, predictions, labels)
         self.assertTrue(torch.allclose(costs, expected_costs))
         self.assertTrue(torch.allclose(egrads, expected_egrads))
         self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+
+        if torch.cuda.is_available():
+          cost, egrads, pgrads = apply_transducer(
+              emissions, predictions, labels, use_cuda=True)
+          self.assertTrue(torch.allclose(cost, expected_cost))
+#          self.assertTrue(torch.allclose(egrads, expected_egrads))
+#          self.assertTrue(torch.allclose(pgrads, expected_pgrads))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 #include "transducer_cuda.h"
 
 #define TILE_DIM 32
+#define ELEMS_PER_THREAD 4
 
 namespace cuda {
 
@@ -58,9 +59,9 @@ void logNormsKernel(
   for (int i = 0; i < alphabetSize; i += TILE_DIM) {
     // Load tiles into shared memory
     if ((ts + threadIdx.y) < T && (i + threadIdx.x) < alphabetSize) {
-      eTile[threadIdx.y][threadIdx.x] = emissions[(ts + threadIdx.y) * alphabetSize + i + threadIdx.x];
+      eTile[threadIdx.x][threadIdx.y] = emissions[(ts + threadIdx.y) * alphabetSize + i + threadIdx.x];
     } else {
-      eTile[threadIdx.y][threadIdx.x] = kNegInf;
+      eTile[threadIdx.x][threadIdx.y] = kNegInf;
     }
     if ((us + threadIdx.y) < U && (i + threadIdx.x) < alphabetSize) {
       pTile[threadIdx.y][threadIdx.x] = predictions[(us + threadIdx.y) * alphabetSize + i + threadIdx.x];
@@ -71,7 +72,7 @@ void logNormsKernel(
 
     // Process tiles
     for (int j = 0; j < TILE_DIM; ++j) {
-      maxScore = max(maxScore, eTile[threadIdx.x][j] + pTile[threadIdx.y][j]);
+      maxScore = max(maxScore, eTile[j][threadIdx.x] + pTile[threadIdx.y][j]);
     }
     __syncthreads();
   }
@@ -80,9 +81,9 @@ void logNormsKernel(
   for (int i = 0; i < alphabetSize; i += TILE_DIM) {
     // Load tiles into shared memory
     if ((ts + threadIdx.y) < T && (i + threadIdx.x) < alphabetSize) {
-      eTile[threadIdx.y][threadIdx.x] = emissions[(ts + threadIdx.y) * alphabetSize + i + threadIdx.x];
+      eTile[threadIdx.x][threadIdx.y] = emissions[(ts + threadIdx.y) * alphabetSize + i + threadIdx.x];
     } else {
-      eTile[threadIdx.y][threadIdx.x] = kNegInf;
+      eTile[threadIdx.x][threadIdx.y] = kNegInf;
     }
     if ((us + threadIdx.y) < U && (i + threadIdx.x) < alphabetSize) {
       pTile[threadIdx.y][threadIdx.x] = predictions[(us + threadIdx.y) * alphabetSize + i + threadIdx.x];
@@ -92,7 +93,7 @@ void logNormsKernel(
     __syncthreads();
 
     for (int j = 0; j < TILE_DIM; j++) {
-      score += expf(eTile[threadIdx.x][j] + pTile[threadIdx.y][j] - maxScore);
+      score += expf(eTile[j][threadIdx.x] + pTile[threadIdx.y][j] - maxScore);
     }
     __syncthreads();
   }
