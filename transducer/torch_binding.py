@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import torch
-from ._transducer import *
+from . import _transducer
 
 class Transducer(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, emissions, predictions, labels, lengths, label_lengths, blank=0):
+    def forward(ctx, emissions, predictions, labels, input_lengths, label_lengths, blank=0):
         """
         Computes the Transducer cost for a minibatch of examples.
 
@@ -17,7 +17,7 @@ class Transducer(torch.autograd.Function):
                 be of shape (minibatch, output length + 1, vocab size).
             labels (IntTensor): 1D tensor of labels for each example
                 consecutively.
-            lengths (IntTensor): 1D tensor of number actviation time-steps
+            input_lengths (IntTensor): 1D tensor of number actviation time-steps
                 for each example.
             label_lengths (IntTensor): 1D tensor of label lengths for
                 each example.
@@ -32,22 +32,24 @@ class Transducer(torch.autograd.Function):
 
         B, T, V = emissions.shape
         U = predictions.shape[1]
-        certify_inputs(emissions, predictions, labels, lengths, label_lengths)
-        costs = torch.tensor(B, device=emissions.device, dtype=dtype)
-        alphas = torch.tensor((B, T, U), device=device, dtype=dtype)
-        log_norms = torch.tensor((B, T, U), device=device, dtype=dtype)
+        certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
+        costs = torch.empty(size=(B,), device=emissions.device, dtype=dtype)
+        alphas = torch.empty(size=(B, T, U), device=device, dtype=dtype)
+        log_norms = torch.empty(size=(B, T, U), device=device, dtype=dtype)
         _transducer.forward(
-            emissions.data_ptr,
-            predictions.data_ptr,
-            costs.data_ptr,
-            alphas.data_ptr,
-            log_norms.data_ptr,
-            labels.data_ptr,
-            lengths.data_ptr,
-            label_lengths.data_ptr,
+            emissions.data_ptr(),
+            predictions.data_ptr(),
+            costs.data_ptr(),
+            alphas.data_ptr(),
+            log_norms.data_ptr(),
+            labels.data_ptr(),
+            input_lengths.data_ptr(),
+            label_lengths.data_ptr(),
             B, T, U, V, blank, is_cuda)
-        ctx.save_for_backward(alphas, log_norms)
-        ctx.sizes = (B, T, U, V)
+        ctx.save_for_backward(
+            emissions, predictions, alphas, log_norms,
+            labels, input_lengths, label_lengths)
+        ctx.blank = blank
         return costs
 
     @staticmethod
@@ -55,22 +57,22 @@ class Transducer(torch.autograd.Function):
         is_cuda = cost.is_cuda
         device = cost.device
         dtype = cost.dtype
-        B, T, U, V = ctx.sizes
-        egrads = torch.tensor((B, T, V), device=device, dtype=dtype)
-        pgrads = torch.tensor((B, U, V), device=device, dtype=dtype)
-        alphas = ctx.saved_tensors[0]
-        log_norms = ctx.saved_tensors[1]
+        emissions, predictions, alphas, log_norms, labels, input_lengths, label_lengths = ctx.saved_tensors
+        B, T, V = emissions.shape
+        U = predictions.shape[1]
+        egrads = torch.empty(size=(B, T, V), device=device, dtype=dtype)
+        pgrads = torch.empty(size=(B, U, V), device=device, dtype=dtype)
         _transducer.backward(
-            emissions.data_ptr,
-            predictions.data_ptr,
-            egrads.data_ptr,
-            pgrads.data_ptr,
-            alphas.data_ptr,
-            log_norms.data_ptr,
-            labels.data_ptr,
-            lengths.data_ptr,
-            label_lengths.data_ptr,
-            B, T, U, V, blank, is_cuda)
+            emissions.data_ptr(),
+            predictions.data_ptr(),
+            egrads.data_ptr(),
+            pgrads.data_ptr(),
+            alphas.data_ptr(),
+            log_norms.data_ptr(),
+            labels.data_ptr(),
+            input_lengths.data_ptr(),
+            label_lengths.data_ptr(),
+            B, T, U, V, ctx.blank, is_cuda)
         return egrads, pgrads, None, None, None, None
 
 
@@ -79,9 +81,9 @@ class TransducerLoss(torch.nn.Module):
         super(TransducerLoss, self).__init__()
         self.blank = blank
 
-    def forward(self, emissions, predictions, labels, lengths, label_lengths):
+    def forward(self, emissions, predictions, labels, input_lengths, label_lengths):
         return Transducer.apply(
-            emissions, predictions, labels, lenghts, label_lengths, self.blank)
+            emissions, predictions, labels, input_lengths, label_lengths, self.blank)
 
 
 def check_type(var, t, name):

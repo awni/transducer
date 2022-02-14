@@ -1,12 +1,13 @@
-#include "transducer_cpu.h"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
 
 #if defined(_OPENMP_)
 #include <omp.h>
 #endif
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
+#include "transducer_cpu.h"
 
 namespace {
 constexpr float kInf = std::numeric_limits<float>::infinity();
@@ -237,6 +238,14 @@ void backward(
     int eOffset = mb * maxInputLength * alphabetSize;
     int pOffset = mb * maxLabelLength * alphabetSize;
     int labelOffset = cumsum(labelLengths, mb);
+    memset(
+        (void*)(egrads + eOffset),
+        0,
+        sizeof(float) * maxInputLength * alphabetSize);
+    memset(
+        (void*)(pgrads + pOffset),
+        0,
+        sizeof(float) * maxLabelLength * alphabetSize);
     backwardSingle(
         emissions + eOffset,
         predictions + pOffset,
