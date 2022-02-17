@@ -120,8 +120,8 @@ void testForwardBackward(
 
   auto egrads = hostCopy(egradsD, emissions.size());
   auto pgrads = hostCopy(pgradsD, predictions.size());
-//  checkClose(egrads, expectedEgrads);
-//  checkClose(pgrads, expectedPgrads);
+  checkClose(egrads, expectedEgrads);
+  checkClose(pgrads, expectedPgrads);
 
   deviceFree(emissionsD);
   deviceFree(predictionsD);
