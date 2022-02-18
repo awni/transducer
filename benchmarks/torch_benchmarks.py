@@ -49,16 +49,39 @@ def time_transducer(B, T, U, V, use_cuda=False):
   msecs = timefunc(transducer_forward, use_cuda)
   print(f"transducer_forward: {msecs:.3f}(ms)")
 
+  logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
+  loss = torchaudio.functional.rnnt_loss(
+        logits, labels, input_lengths, label_lengths, blank=0, reduction='none')
+  loss = loss.sum()
+  def torch_rnnt_backward():
+    emissions.grad = None
+    predictions.grad = None
+    loss.backward(retain_graph=True)
+
+  msecs = timefunc(torch_rnnt_backward, use_cuda)
+  print(f"rnnt_backward: {msecs:.3f}(ms)")
+
+  loss = TransducerLoss()(
+      emissions, predictions, labels, input_lengths, label_lengths)
+  loss = loss.sum()
+  def transducer_backward():
+    emissions.grad = None
+    predictions.grad = None
+    loss.backward(retain_graph=True)
+
+  msecs = timefunc(transducer_backward, use_cuda)
+  print(f"transducer_backward: {msecs:.3f}(ms)")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark transducer")
     parser.add_argument(
         "--use_cuda", action="store_true", help="Benchmark the cuda back-end.")
     args = parser.parse_args()
-    Bs = [1, 4, 16, 32]
+    Bs = [2, 4, 16, 32]
     Ts = [1000, 10000]
     Us = [100, 500]
-    Vs = [1000, 10000]
+    Vs = [2000, 10000]
     for (B, T, U, V) in itertools.product(Bs, Ts, Us, Vs):
       time_transducer(B, T, U, V, use_cuda=args.use_cuda)
       import sys
