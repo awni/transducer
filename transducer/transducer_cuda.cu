@@ -1,4 +1,5 @@
 #include <limits>
+#include <stdexcept>
 #include "transducer_cuda.h"
 
 #define NT 8
