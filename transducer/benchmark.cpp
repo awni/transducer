@@ -66,7 +66,7 @@ void timeTransducer(int B, int T, int U, int V) {
   TIME(transducerForward);
 
   std::vector<float> egrads(B * T * V);
-  std::vector<float> pgrads(B * U * V);
+  std::vector<float> pgrads(B * (U + 1) * V);
   auto transducerBackward = [&]() {
       backward(
           emissions.data(),
@@ -84,7 +84,7 @@ void timeTransducer(int B, int T, int U, int V) {
 }
 
 int main() {
-  int B = 1;
+  int B = 2;
   int T = 100;
   int U = 100;
   int V = 32;

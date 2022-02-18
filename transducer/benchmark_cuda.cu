@@ -112,7 +112,7 @@ void timeTransducer(int B, int T, int U, int V) {
   TIME(transducerForward);
 
   auto egrads = deviceAlloc(B * T * V);
-  auto pgrads = deviceAlloc(B * U * V);
+  auto pgrads = deviceAlloc(B * (U + 1) * V);
   auto transducerBackward = [=]() {
       backward(
           emissionsD,
@@ -141,9 +141,9 @@ void timeTransducer(int B, int T, int U, int V) {
 }
 
 int main() {
-  int B = 16;
-  int T = 150;
-  int U = 40;
-  int V = 5000;
+  int B = 8;
+  int T = 10000;
+  int U = 400;
+  int V = 32;
   timeTransducer(B, T, U, V);
 }
