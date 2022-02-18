@@ -56,6 +56,10 @@ float forwardSingle(
     int blank, int T,
     int U, int V) {
 
+  if (T == 0 || U == 0) {
+    return kInf;
+  }
+
   computeLogNorms(logNorms, emissions, predictions, T, U, V);
 
   alphas[0] = 0;
@@ -106,6 +110,9 @@ void backwardSingle(
     const int* labels,
     int blank, int T,
     int U, int V) {
+  if (T == 0 || U == 0) {
+    return;
+  }
   float* dalphas = (float*) malloc(T * U * sizeof(float));
   dalphas[idx2(T-1, U-1, U)] = -1.0;
   egrads[idx2(T-1, blank, V)] = -1.0;

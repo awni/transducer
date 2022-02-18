@@ -20,7 +20,8 @@ void checkClose(float a, float b, float rtol=1e-6, float atol=1e-5) {
   if ((a == inf || a == -inf || b == inf || b == -inf) && (a != b)) {
     throw std::runtime_error("");
   }
-  auto thresh = std::max<float>(rtol * std::max<float>(a, b), atol);
+  auto thresh = std::max<float>(
+      rtol * std::max<float>(std::abs(a), std::abs(b)), atol);
   if (std::abs(a - b) > thresh) {
     throw std::runtime_error("");
   }

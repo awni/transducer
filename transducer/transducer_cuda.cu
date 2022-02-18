@@ -183,8 +183,10 @@ void accumulateGradsKernel(
     int t = ts + i * blockDim.y + threadIdx.y;
     for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
       int v = vs + j * blockDim.x + threadIdx.x;
-      ascores[i][j] = A[idx2(t, v, alphabetSize)];
-      grads[i][j] = 0.0f;
+      if (v < alphabetSize && t < T) {
+        ascores[i][j] = A[idx2(t, v, alphabetSize)];
+        grads[i][j] = 0.0f;
+      }
     }
   }
   for (int i = 0; i < U; i += NT) {
@@ -192,7 +194,7 @@ void accumulateGradsKernel(
     for (int j = 0; j < ELEMS_PER_THREAD; j++) {
       int tidx = j * blockDim.x + threadIdx.x;
       if ((vs + tidx) < alphabetSize && (i + threadIdx.y) < U) {
-        bTile[threadIdx.y][tidx] = B[(i + threadIdx.y) * alphabetSize + tidx];
+        bTile[threadIdx.y][tidx] = B[(i + threadIdx.y) * alphabetSize + vs + tidx];
       } else {
         bTile[threadIdx.y][tidx] = 0.0f;
       }
@@ -201,21 +203,21 @@ void accumulateGradsKernel(
         int tidy = i + threadIdx.y;
         int tidx = j * blockDim.x + threadIdx.x;
         if ((ts + tidx) < T && tidy < U) {
-          lTile[tidx][tidy] = logNorms[tidy * T + ts + tidx];
-          dTile[tidx][tidy] = dalphas[tidy * T + ts + tidx];
+          lTile[tidx][threadIdx.y] = logNorms[tidy * T + ts + tidx];
+          dTile[tidx][threadIdx.y] = dalphas[tidy * T + ts + tidx];
         } else {
-          lTile[tidx][tidy] = 0.0f;
-          dTile[tidx][tidy]  = 0.0f;
+          lTile[tidx][threadIdx.y] = 0.0f;
+          dTile[tidx][threadIdx.y]  = 0.0f;
         }
       } else {
         int tidx = i + threadIdx.x;
         int tidy = j * blockDim.y + threadIdx.y;
         if ((ts + tidy) < T && tidx < U) {
-          lTile[tidy][tidx] = logNorms[(ts + tidy) * U + tidx];
-          dTile[tidy][tidx] = dalphas[(ts + tidy) * U + tidx];
+          lTile[tidy][threadIdx.x] = logNorms[(ts + tidy) * U + tidx];
+          dTile[tidy][threadIdx.x] = dalphas[(ts + tidy) * U + tidx];
         } else {
-          lTile[tidy][tidx] = 0.0f;
-          dTile[tidy][tidx] = 0.0f;
+          lTile[tidy][threadIdx.x] = 0.0f;
+          dTile[tidy][threadIdx.x] = 0.0f;
         }
       }
     }
@@ -224,7 +226,7 @@ void accumulateGradsKernel(
     // Process tiles
     for (int j = 0; j < ELEMS_PER_THREAD; j++) {
       int tidy = j * blockDim.y + threadIdx.y;
-      for (int k = 0; k < ELEMS_PER_THREAD; k++) {
+      for (int k = 0; k < ELEMS_PER_THREAD; ++k) {
         int tidx = k * blockDim.x + threadIdx.x;
         for (int l = 0; l < NT; ++l) {
           grads[j][k] += dTile[tidy][l] * expf(ascores[j][k] - lTile[tidy][l] + bTile[l][tidx]);
@@ -263,6 +265,10 @@ void forwardKernel(
   int mb = blockIdx.x; 
   int T = inputLengths[mb];
   int U = labelLengths[mb] + 1;
+  if (T == 0 || U == 0) {
+    costs[mb] = kInf;
+    return;
+  }
   emissions += maxT * V * mb;
   predictions += maxU * V * mb;
   logNorms += maxT * maxU * mb;
@@ -329,6 +335,9 @@ void backwardKernel(
   int mb = blockIdx.x;
   int T = inputLengths[mb];
   int U = labelLengths[mb] + 1;
+  if (T == 0 || U == 0) {
+    return;
+  }
   int offset = maxT * V * mb;
   emissions += offset;
   egrads += offset;
@@ -360,13 +369,16 @@ void backwardKernel(
     }
     for (; t >= 0 && u < U; t -= blockDim.x, u += blockDim.x) {
       float alpha_ln = alphas[idx2(t, u, U)] - logNorms[idx2(t, u, U)];
-      float noEmit = (t >= T) ? 0.0f : dalphas[idx2(t+1, u, U)] *
+      float noEmit = 0.0f;
+      if (t < (T - 1)) {
+        noEmit = dalphas[idx2(t+1, u, U)] *
           expf(alpha_ln +
               emissions[idx2(t, blank, V)] +
               predictions[idx2(u, blank, V)] -
               alphas[idx2(t+1, u, U)]);
-      egrads[idx2(t, blank, V)] += noEmit;
-      pgrads[idx2(u, blank, V)] += noEmit;
+        egrads[idx2(t, blank, V)] += noEmit;
+        pgrads[idx2(u, blank, V)] += noEmit;
+      }
       float emit = 0.0f;
       if (u < (U - 1)) {
         emit = dalphas[idx2(t, u+1, U)] *
@@ -476,14 +488,13 @@ void backward(
     int alphabetSize,
     int blank) {
   float* dalphas;
-
   CUDA_CHECK(cudaMallocAsync(
       (void**)&dalphas,
-      sizeof(float) * maxInputLength * maxLabelLength, 0));
+      sizeof(float) * batchSize * maxInputLength * maxLabelLength, 0));
   CUDA_CHECK(cudaMemsetAsync(
-      (void*)egrads, 0, sizeof(float) * maxInputLength * alphabetSize, 0));
+      (void*)egrads, 0, sizeof(float) * batchSize * maxInputLength * alphabetSize, 0));
   CUDA_CHECK(cudaMemsetAsync(
-      (void*)pgrads, 0, sizeof(float) * maxLabelLength * alphabetSize, 0));
+      (void*)pgrads, 0, sizeof(float) * batchSize * maxLabelLength * alphabetSize, 0));
   {
     int threads = std::min(1024, divUp(std::min(maxInputLength, maxLabelLength), 32) * 32);
     backwardKernel<<<batchSize, threads>>>(

@@ -1,6 +1,8 @@
 #include <cmath>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <numeric>
+#include <tuple>
 
 #include "test.h"
 #include "transducer.h"
@@ -14,14 +16,12 @@ float* deviceAlloc(size_t size) {
   return ptr;
 }
 
-std::vector<float> hostCopy(const float* dptr, size_t size) {
-  std::vector<float> hostVec(size);
+void hostCopy(const float* dptr, std::vector<float>& hostVec) {
   CUDA_CHECK(cudaMemcpy(
         (void*) hostVec.data(),
         (void*) dptr,
-        sizeof(float) * size,
+        sizeof(float) * hostVec.size(),
         cudaMemcpyDeviceToHost));
-  return hostVec;
 }
 
 int* deviceCopy(const std::vector<int>& hostVec) {
@@ -45,94 +45,110 @@ float* deviceCopy(const std::vector<float>& hostVec) {
   return dptr;
 }
 
-void deviceFree(float* dptr) {
+void deviceFree(const float* dptr) {
   CUDA_CHECK(cudaFree((void*)dptr));
 }
 
-void deviceFree(int* dptr) {
+void deviceFree(const int* dptr) {
   CUDA_CHECK(cudaFree((void*)dptr));
 }
 
-void testForwardBackward(
+std::tuple<std::vector<float>, std::vector<float>, std::vector<float>>
+callForwardBackward(
     const std::vector<float>& emissions,
     const std::vector<float>& predictions,
     const std::vector<int>& labels,
     const std::vector<int>& inputLengths,
     const std::vector<int>& labelLengths,
+    int maxInputLength,
+    int maxLabelLength,
     int alphabetSize,
-    const std::vector<float>& expectedCosts,
-    const std::vector<float>& expectedEgrads,
-    const std::vector<float>& expectedPgrads) {
+    bool useCuda) {
 
-  int maxInputLength = *std::max_element(
-      inputLengths.begin(), inputLengths.end());
-  int maxLabelLength = *std::max_element(
-      labelLengths.begin(), labelLengths.end()) + 1;
   int batchSize = emissions.size() / (alphabetSize * maxInputLength);
   int blank = 0;
 
-  auto emissionsD = deviceCopy(emissions);
-  auto predictionsD = deviceCopy(predictions);
-  auto labelsD = deviceCopy(labels);
-  auto inputLengthsD = deviceCopy(inputLengths);
-  auto labelLengthsD = deviceCopy(labelLengths);
-  float* costsD = deviceAlloc(batchSize);
-  float* alphas = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
-  float* logNorms = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
+  std::vector<float> costs(batchSize);
+  std::vector<float> alphas(batchSize * maxInputLength * maxLabelLength);
+  std::vector<float> logNorms(batchSize * maxInputLength * maxLabelLength);
+  std::vector<float> egrads(emissions.size());
+  std::vector<float> pgrads(predictions.size());
+  const float* emissionsPtr, *predictionsPtr;
+  float* costsPtr, *alphasPtr, *logNormsPtr, *egradsPtr, *pgradsPtr;
+  const int* labelsPtr, *inputLengthsPtr, *labelLengthsPtr;
+  if (useCuda) {
+    emissionsPtr = deviceCopy(emissions);
+    predictionsPtr = deviceCopy(predictions);
+    labelsPtr = deviceCopy(labels);
+    inputLengthsPtr = deviceCopy(inputLengths);
+    labelLengthsPtr = deviceCopy(labelLengths);
+    costsPtr = deviceAlloc(batchSize);
+    alphasPtr = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
+    logNormsPtr = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
+    egradsPtr = deviceAlloc(emissions.size());
+    pgradsPtr = deviceAlloc(predictions.size());
+  } else {
+    emissionsPtr = emissions.data();
+    predictionsPtr = predictions.data();
+    labelsPtr = labels.data();
+    inputLengthsPtr = inputLengths.data();
+    labelLengthsPtr = labelLengths.data();
+    alphasPtr = alphas.data();
+    logNormsPtr = logNorms.data();
+    costsPtr = costs.data();
+    egradsPtr = egrads.data();
+    pgradsPtr = pgrads.data();
+  }
 
   forward(
-      emissionsD,
-      predictionsD,
-      costsD,
-      alphas,
-      logNorms,
-      labelsD,
-      inputLengthsD,
-      labelLengthsD,
+      emissionsPtr,
+      predictionsPtr,
+      costsPtr,
+      alphasPtr,
+      logNormsPtr,
+      labelsPtr,
+      inputLengthsPtr,
+      labelLengthsPtr,
       batchSize,
       maxInputLength,
       maxLabelLength,
       alphabetSize,
       blank,
-      true);
+      useCuda);
 
-  auto costs = hostCopy(costsD, batchSize);
-  checkClose(costs, expectedCosts);
-
-  float* egradsD = deviceAlloc(emissions.size());
-  float* pgradsD = deviceAlloc(predictions.size());
   backward(
-      emissionsD,
-      predictionsD,
-      egradsD,
-      pgradsD,
-      alphas,
-      logNorms,
-      labelsD,
-      inputLengthsD,
-      labelLengthsD,
+      emissionsPtr,
+      predictionsPtr,
+      egradsPtr,
+      pgradsPtr,
+      alphasPtr,
+      logNormsPtr,
+      labelsPtr,
+      inputLengthsPtr,
+      labelLengthsPtr,
       batchSize,
       maxInputLength,
       maxLabelLength,
       alphabetSize,
       blank,
-      true);
+      useCuda);
 
-  auto egrads = hostCopy(egradsD, emissions.size());
-  auto pgrads = hostCopy(pgradsD, predictions.size());
-  checkClose(egrads, expectedEgrads);
-  checkClose(pgrads, expectedPgrads);
-
-  deviceFree(emissionsD);
-  deviceFree(predictionsD);
-  deviceFree(labelsD);
-  deviceFree(inputLengthsD);
-  deviceFree(labelLengthsD);
-  deviceFree(costsD);
-  deviceFree(alphas);
-  deviceFree(logNorms);
-  deviceFree(egradsD);
-  deviceFree(pgradsD);
+  if (useCuda) {
+    hostCopy(costsPtr, costs);
+    hostCopy(egradsPtr, egrads);
+    hostCopy(pgradsPtr, pgrads);
+    deviceFree(emissionsPtr);
+    deviceFree(predictionsPtr);
+    deviceFree(labelsPtr);
+    deviceFree(inputLengthsPtr);
+    deviceFree(labelLengthsPtr);
+    deviceFree(costsPtr);
+    deviceFree(alphasPtr);
+    deviceFree(logNormsPtr);
+    deviceFree(egradsPtr);
+    deviceFree(pgradsPtr);
+  }
+  return std::make_tuple(costs, egrads, pgrads);
 }
 
 void logNormsTest() {
@@ -161,7 +177,8 @@ void logNormsTest() {
         maxT,
         maxU,
         alphabetSize);
-    auto lNorms = hostCopy(logNormsD, lNormSize);
+    std::vector<float> lNorms(lNormSize);
+    hostCopy(logNormsD, lNorms);
     deviceFree(emissionsD);
     deviceFree(predictionsD);
     deviceFree(inputLengthsD);
@@ -280,16 +297,17 @@ void tinyTest() {
     {expectedEgrads[0] + expectedEgrads[2],
      expectedEgrads[1] + expectedEgrads[3]};
 
-  testForwardBackward(
+  auto result = callForwardBackward(
       emissions,
       predictions,
       {},
       {inputLength},
       {labelLength},
-      alphabetSize,
-      {expectedCost},
-      expectedEgrads,
-      expectedPgrads);
+      2, 1, alphabetSize, true);
+
+  checkClose(std::get<0>(result), {expectedCost});
+  checkClose(std::get<1>(result), expectedEgrads);
+  checkClose(std::get<2>(result), expectedPgrads);
 }
 
 void smallTest() {
@@ -315,16 +333,16 @@ void smallTest() {
      -0.1768123358488083, 0.30765989422798157, -0.5961406826972961, 0.23264653980731964, 0.23264653980731964,
      -1.1112537384033203, 0.2380295693874359, 0.24793916940689087, 0.41780781745910645, 0.20747721195220947};
 
-  testForwardBackward(
+  auto result = callForwardBackward(
       emissions,
       predictions,
       labels,
       {inputLength},
       {labelLength},
-      alphabetSize,
-      {expectedCost},
-      expectedEgrads,
-      expectedPgrads);
+      2, 3, alphabetSize, true);
+  checkClose(std::get<0>(result), {expectedCost});
+  checkClose(std::get<1>(result), expectedEgrads);
+  checkClose(std::get<2>(result), expectedPgrads);
 }
 
 void bigTest() {
@@ -376,16 +394,74 @@ void bigTest() {
      -0.4294244050979614, 0.07082393765449524, 0.3586004972457886,
      -1.4029310941696167, 1.0439238548278809, 0.35900723934173584};
 
-  testForwardBackward(
+  auto result = callForwardBackward(
       emissions,
       predictions,
       labels,
       inputLengths,
       labelLengths,
-      alphabetSize,
-      expectedCosts,
-      expectedEgrads,
-      expectedPgrads);
+      4, 3, alphabetSize, true);
+  checkClose(std::get<0>(result), expectedCosts);
+  checkClose(std::get<1>(result), expectedEgrads);
+  checkClose(std::get<2>(result), expectedPgrads);
+}
+
+
+void stressTest() {
+  std::vector<int> Bs = {1, 10};
+  std::vector<int> Ts = {1, 10, 100};
+  std::vector<int> Us = {1, 10, 100};
+  std::vector<int> Vs = {8, 20, 32, 101, 128};
+  auto randu = []() {
+    return static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX);
+  };
+  for (auto B : Bs) {
+  for (auto T : Ts) {
+  for (auto U : Us) {
+  for (auto V : Vs) {
+    std::vector<float> emissions(B * T * V);
+    std::generate(emissions.begin(), emissions.end(), randu);
+    std::vector<float> predictions(B * U * V);
+    std::generate(predictions.begin(), predictions.end(), randu);
+    std::vector<int> inputLengths(B);
+    std::generate(
+        inputLengths.begin(),
+        inputLengths.end(),
+        [T](){ return std::rand() % (T + 1); });
+    std::vector<int> labelLengths(B);
+    std::generate(
+        labelLengths.begin(),
+        labelLengths.end(),
+        [U](){ return std::rand() % U; });
+    std::vector<int> labels(B * (U - 1));
+    std::generate(
+        labels.begin(),
+        labels.end(),
+        [V](){ return 1 + std::rand() % (V - 1); });
+    // Compare them to the GPU
+    std::vector<float> costH, egradsH, pgradsH;
+    std::vector<float> costD, egradsD, pgradsD;
+    std::tie(costH, egradsH, pgradsH) = callForwardBackward(
+      emissions,
+      predictions,
+      labels,
+      inputLengths,
+      labelLengths,
+      T, U, V, false);
+    std::tie(costD, egradsD, pgradsD) = callForwardBackward(
+      emissions,
+      predictions,
+      labels,
+      inputLengths,
+      labelLengths,
+      T, U, V, true);
+    checkClose(costH, costD);
+    checkClose(egradsH, egradsD, 1e-3, 1e-4);
+    checkClose(pgradsH, pgradsD, 1e-3, 1e-4);
+  }
+  }
+  }
+  }
 }
 
 int main() {
@@ -393,4 +469,5 @@ int main() {
   TEST(tinyTest);
   TEST(smallTest);
   TEST(bigTest);
+  TEST(stressTest);
 }
