@@ -203,8 +203,82 @@ void bigTest() {
       expectedPgrads);
 }
 
+void viterbiTest() {
+  { // Empty test
+    std::vector<int> inputLengths = {0};
+    std::vector<int> labelLengths = {0};
+    viterbi(
+        nullptr,
+        nullptr,
+        nullptr,
+        inputLengths.data(),
+        labelLengths.data(),
+        1, 0, 1, 2, 0, false);
+  }
+
+  { // Empty transcript should work without errors
+    std::vector<float> emissions = {0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
+    std::vector<float> predictions = {0.0, 1.0};
+    std::vector<int> inputLengths = {2};
+    std::vector<int> labelLengths = {0};
+    viterbi(
+        emissions.data(),
+        predictions.data(),
+        nullptr,
+        inputLengths.data(),
+        labelLengths.data(),
+        1, 2, 1, 2, 0, false);
+  }
+
+  { // No blanks test
+    std::vector<float> emissions = {0.0, 0.0, 0.3};
+    std::vector<float> predictions = {
+        0.0, 1.0, 0.8,
+        1.0, 0.0, 0.5,
+        0.0, 1.5, 0.9,
+        0.0, 0.0, 0.0
+      };
+    std::vector<int> inputLengths = {1};
+    std::vector<int> labelLengths = {3};
+    std::vector<int> labels(3);
+    viterbi(
+        emissions.data(),
+        predictions.data(),
+        labels.data(),
+        inputLengths.data(),
+        labelLengths.data(),
+        1, 1, 4, 3, 0, false);
+    checkSame(labels, {2, 2, 1});
+  }
+
+  { // Bigger test
+    std::vector<float> emissions = {
+        0.0, 0.0, 6.0,
+        0.3, 0.5, 0.5,
+        0.1, 0.9, 0.7
+      };
+    std::vector<float> predictions = {
+        0.0, 4.0, 1.0,
+        1.0, 8.0, 0.2,
+        0.0, 1.5, 0.9
+      };
+    std::vector<int> inputLengths = {3};
+    std::vector<int> labelLengths = {2};
+    std::vector<int> labels(2);
+    viterbi(
+        emissions.data(),
+        predictions.data(),
+        labels.data(),
+        inputLengths.data(),
+        labelLengths.data(),
+        1, 3, 3, 3, 0, false);
+    checkSame(labels, {2, 1});
+  }
+}
+
 int main() {
     TEST(tinyTest);
     TEST(smallTest);
     TEST(bigTest);
+    TEST(viterbiTest);
 }

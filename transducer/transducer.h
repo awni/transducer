@@ -32,3 +32,16 @@ void backward(
     int alphabetSize,
     int blank,
     bool useCuda);
+
+void viterbi(
+    const float* emissions,
+    const float* predictions,
+    int* labels,
+    const int* inputLengths,
+    const int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize,
+    int blank,
+    bool useCuda);

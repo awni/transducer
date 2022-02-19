@@ -16,6 +16,14 @@ float* deviceAlloc(size_t size) {
   return ptr;
 }
 
+void hostCopy(const int* dptr, std::vector<int>& hostVec) {
+  CUDA_CHECK(cudaMemcpy(
+        (void*) hostVec.data(),
+        (void*) dptr,
+        sizeof(int) * hostVec.size(),
+        cudaMemcpyDeviceToHost));
+}
+
 void hostCopy(const float* dptr, std::vector<float>& hostVec) {
   CUDA_CHECK(cudaMemcpy(
         (void*) hostVec.data(),
@@ -464,10 +472,112 @@ void stressTest() {
   }
 }
 
+void viterbiTest() {
+  auto callViterbi = [](
+      const std::vector<float>& emissions,
+      const std::vector<float>& predictions,
+      std::vector<int>& labels,
+      const std::vector<int>& inputLengths,
+      const std::vector<int>& labelLengths,
+      int batchSize,
+      int maxInputLength,
+      int maxLabelLength,
+      int alphabetSize) {
+    auto emissionsPtr = deviceCopy(emissions);
+    auto predictionsPtr = deviceCopy(predictions);
+    auto inputLengthsPtr = deviceCopy(inputLengths);
+    auto labelLengthsPtr = deviceCopy(labelLengths);
+    auto labelsPtr = deviceCopy(labels);
+    viterbi(
+      emissionsPtr,
+      predictionsPtr,
+      labelsPtr,
+      inputLengthsPtr,
+      labelLengthsPtr,
+      batchSize,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize, 0, true);
+    hostCopy(labelsPtr, labels);
+  };
+
+  { // Empty test
+    std::vector<int> inputLengths = {0};
+    std::vector<int> labelLengths = {0};
+    std::vector<int> labels{};
+    callViterbi(
+        {}, {}, labels,
+        inputLengths,
+        labelLengths,
+        1, 0, 1, 2);
+  }
+
+  { // Empty transcript should work without errors
+    std::vector<float> emissions = {0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
+    std::vector<float> predictions = {0.0, 1.0};
+    std::vector<int> inputLengths = {2};
+    std::vector<int> labelLengths = {0};
+    std::vector<int> labels{};
+    callViterbi(
+        emissions,
+        predictions,
+        labels,
+        inputLengths,
+        labelLengths,
+        1, 2, 1, 2);
+  }
+
+  { // No blanks test
+    std::vector<float> emissions = {0.0, 0.0, 0.3};
+    std::vector<float> predictions = {
+        0.0, 1.0, 0.8,
+        1.0, 0.0, 0.5,
+        0.0, 1.5, 0.9,
+        0.0, 0.0, 0.0
+      };
+    std::vector<int> inputLengths = {1};
+    std::vector<int> labelLengths = {3};
+    std::vector<int> labels(3);
+    callViterbi(
+        emissions,
+        predictions,
+        labels,
+        inputLengths,
+        labelLengths,
+        1, 1, 4, 3);
+    checkSame(labels, {2, 2, 1});
+  }
+
+  { // Bigger test
+    std::vector<float> emissions = {
+        0.0, 0.0, 6.0,
+        0.3, 0.5, 0.5,
+        0.1, 0.9, 0.7
+      };
+    std::vector<float> predictions = {
+        0.0, 4.0, 1.0,
+        1.0, 8.0, 0.2,
+        0.0, 1.5, 0.9
+      };
+    std::vector<int> inputLengths = {3};
+    std::vector<int> labelLengths = {2};
+    std::vector<int> labels(2);
+    callViterbi(
+        emissions,
+        predictions,
+        labels,
+        inputLengths,
+        labelLengths,
+        1, 3, 3, 3);
+    checkSame(labels, {2, 1});
+  }
+}
+
 int main() {
   TEST(logNormsTest);
   TEST(tinyTest);
   TEST(smallTest);
   TEST(bigTest);
   TEST(stressTest);
+  TEST(viterbiTest);
 }

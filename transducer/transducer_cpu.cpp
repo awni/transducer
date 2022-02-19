@@ -180,6 +180,80 @@ void backwardSingle(
   free(dalphas);
 }
 
+void viterbiSingle(
+    const float* emissions,
+    const float* predictions,
+    int* labels,
+    int blank, int T,
+    int U, int V) {
+  if (T == 0 || U == 0) {
+    return;
+  }
+  int* paths = (int*) malloc(T * U * sizeof(int));
+  float* scores = (float*) malloc(T * U * sizeof(float));
+
+  auto getMax = [emissions, predictions, V, blank](int t, int u) {
+    float maxScore = kNegInf;
+    int maxIdx = 0;
+    for (int v = 0; v < V; ++v) {
+      if (v != blank) {
+        float score = emissions[idx2(t, v, V)] + predictions[idx2(u, v, V)];
+        if (score > maxScore) {
+          maxScore = score;
+          maxIdx = v;
+        }
+      }
+    }
+    return std::make_pair(maxScore, maxIdx);
+  };
+
+  scores[0] = 0;
+  for (int t = 1; t < T; t++) {
+    scores[idx2(t, 0, U)] = scores[idx2(t-1, 0, U)]
+      + emissions[idx2(t-1, blank, V)]
+      + predictions[idx2(0, blank, V)];
+    paths[idx2(t, 0, U)] = blank;
+  }
+
+  for (int u = 1; u < U; u++) {
+    auto maxAndIdx = getMax(0, u - 1);
+    scores[idx2(0, u, U)] = maxAndIdx.first + scores[idx2(0, u-1, U)];
+    paths[idx2(0, u, U)] = maxAndIdx.second;
+  }
+
+  for (int t = 1; t < T; t++) {
+    for (int u = 1; u < U; u++) {
+      float noEmit = scores[idx2(t-1, u, U)]
+        + emissions[idx2(t-1, blank, V)]
+        + predictions[idx2(u, blank, V)];
+      float emit = scores[idx2(t, u-1, U)];
+      auto maxAndIdx = getMax(t, u-1);
+      emit += maxAndIdx.first;
+
+      if (emit > noEmit) {
+        scores[idx2(t, u, U)] = emit;
+        paths[idx2(t, u, U)] = maxAndIdx.second;
+      } else {
+        scores[idx2(t, u, U)] = noEmit;
+        paths[idx2(t, u, U)] = blank;
+      }
+    }
+  }
+
+  int t = T - 1;
+  int u = U - 1;
+  while (u > 0) {
+    int l = paths[idx2(t, u, U)];
+    if (l == blank) {
+      t -= 1;
+    } else {
+      labels[(u--) - 1] = l;
+    }
+  }
+  free(paths);
+  free(scores);
+}
+
 } // namespace
 
 namespace cpu {
@@ -252,6 +326,32 @@ void backward(
         pgrads + pOffset,
         alphas + mb * maxInputLength * maxLabelLength,
         logNorms + mb * maxInputLength * maxLabelLength,
+        labels + labelOffset,
+        blank, T, U, alphabetSize);
+  }
+}
+
+void viterbi(
+    const float* emissions,
+    const float* predictions,
+    int* labels,
+    const int* inputLengths,
+    const int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize,
+    int blank) {
+#pragma omp parallel for
+  for (int mb = 0; mb < batchSize; ++mb) {
+    int T = inputLengths[mb]; // Length of utterance (time)
+    int U = labelLengths[mb] + 1; // Length of transcription
+    int eOffset = mb * maxInputLength * alphabetSize;
+    int pOffset = mb * maxLabelLength * alphabetSize;
+    int labelOffset = mb * (maxLabelLength - 1);
+    viterbiSingle(
+        emissions + eOffset,
+        predictions + pOffset,
         labels + labelOffset,
         blank, T, U, alphabetSize);
   }

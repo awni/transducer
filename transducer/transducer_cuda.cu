@@ -396,6 +396,95 @@ void backwardKernel(
   }
 }
 
+__global__
+void viterbiKernel(
+    const float* emissions,
+    const float* predictions,
+    float* scores,
+    int* paths,
+    int* labels,
+    const int* inputLengths,
+    const int* labelLengths,
+    int maxT,
+    int maxU,
+    int V,
+    int blank) {
+  int tidx = threadIdx.x;
+  int mb = blockIdx.x; 
+  int T = inputLengths[mb];
+  int U = labelLengths[mb] + 1;
+  if (T == 0 || U == 0) {
+    return;
+  }
+  emissions += maxT * V * mb;
+  predictions += maxU * V * mb;
+  scores += maxT * maxU * mb;
+  paths += maxT * maxU * mb;
+  labels += (maxU - 1) * mb;
+
+  if (tidx == 0) {
+    scores[0] = 0.0f;
+  }
+  __syncthreads();
+
+  // Compute label offset
+  for (int i = 1; i < (T + U - 1); ++i) {
+    int t, u;
+    if (i >= T) {
+      t = T - 1 - tidx;
+      u = (i - T + 1) + tidx;
+    } else {
+      t = i - tidx;
+      u = tidx;
+    }
+    for (; t >= 0 && u < U; t -= blockDim.x, u += blockDim.x) {
+      float noEmit = (t == 0) ? kNegInf : 
+          scores[idx2(t-1, u, U)] +
+          emissions[idx2(t-1, blank, V)] +
+          predictions[idx2(u, blank, V)];
+      float emit;
+      float maxIdx = 0;
+      if (u == 0) {
+        emit = kNegInf;
+      } else {
+        emit = scores[idx2(t, u-1, U)];
+        float maxScore = kNegInf;
+        for (int v = 0; v < V; ++v) {
+          if (v == blank) {
+            continue;
+          }
+          float score = emissions[idx2(t, v, V)] + predictions[idx2(u-1, v, V)];
+          if (score > maxScore) {
+            maxScore = score;
+            maxIdx = v;
+          }
+        }
+        emit += maxScore;
+      }
+      if (emit > noEmit) {
+        scores[idx2(t, u, U)] = emit;
+        paths[idx2(t, u, U)] = maxIdx;
+      } else {
+        scores[idx2(t, u, U)] = noEmit;
+        paths[idx2(t, u, U)] = blank;
+      }
+    }
+    __syncthreads();
+  }
+  if (tidx == 0) {
+    int t = T - 1;
+    int u = U - 1;
+    while (u > 0) {
+      int l = paths[idx2(t, u, U)];
+      if (l == blank) {
+        t -= 1;
+      } else {
+        labels[(u--) - 1] = l;
+      }
+    }
+  }
+}
+
 } // namespace
 
 void cudaCheck(cudaError_t err, const char* file, int line) {
@@ -553,6 +642,44 @@ void backward(
       true);
   }
   CUDA_CHECK(cudaFreeAsync(dalphas, 0));
+}
+
+void viterbi(
+    const float* emissions,
+    const float* predictions,
+    int* labels,
+    const int* inputLengths,
+    const int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize,
+    int blank) {
+  float* scores;
+  int* paths;
+  CUDA_CHECK(cudaMallocAsync(
+      (void**)&scores,
+      sizeof(float) * batchSize * maxInputLength * maxLabelLength, 0));
+  CUDA_CHECK(cudaMallocAsync(
+      (void**)&paths,
+      sizeof(int) * batchSize * maxInputLength * maxLabelLength, 0));
+  {
+    int threads = std::min(1024, divUp(std::min(maxInputLength, maxLabelLength), 32) * 32);
+    viterbiKernel<<<batchSize, threads>>>(
+      emissions,
+      predictions,
+      scores,
+      paths,
+      labels,
+      inputLengths,
+      labelLengths,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize,
+      blank);
+  }
+  CUDA_CHECK(cudaFreeAsync(scores, 0));
+  CUDA_CHECK(cudaFreeAsync(paths, 0));
 }
 
 } // namespace cuda

@@ -38,3 +38,11 @@ void checkClose(
     checkClose(a[i], b[i], rtol, atol);
   }
 }
+
+void checkSame(
+    const std::vector<int>& a,
+    const std::vector<int>& b) {
+  if (a != b) {
+    throw std::runtime_error("");
+  }
+}

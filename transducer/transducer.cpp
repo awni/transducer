@@ -111,3 +111,46 @@ void backward(
         blank);
   }
 }
+
+void viterbi(
+    const float* emissions,
+    const float* predictions,
+    int* labels,
+    const int* inputLengths,
+    const int* labelLengths,
+    int batchSize,
+    int maxInputLength,
+    int maxLabelLength,
+    int alphabetSize,
+    int blank,
+    bool useCuda) {
+  if (useCuda) {
+#if defined(_CUDA_)
+    cuda::viterbi(
+        emissions,
+        predictions,
+        labels,
+        inputLengths,
+        labelLengths,
+        batchSize,
+        maxInputLength,
+        maxLabelLength,
+        alphabetSize,
+        blank);
+#else
+    throw std::invalid_argument("Transducer not built with CUDA.");
+#endif
+  } else {
+    cpu::viterbi(
+        emissions,
+        predictions,
+        labels,
+        inputLengths,
+        labelLengths,
+        batchSize,
+        maxInputLength,
+        maxLabelLength,
+        alphabetSize,
+        blank);
+  }
+}
