@@ -7,26 +7,6 @@ class Transducer(torch.autograd.Function):
 
   @staticmethod
   def forward(ctx, emissions, predictions, labels, input_lengths, label_lengths, blank=0):
-    """
-    Computes the Transducer cost for a minibatch of examples.
-
-    Arguments:
-        emissions (FloatTensor): Unnormalized emission scores should
-            be of shape (minibatch, input length, vocab size).
-        predictions (FloatTensor): Unnormalized prediction scores should
-            be of shape (minibatch, output length + 1, vocab size).
-        labels (IntTensor): 2D tensor of labels for each example of shape
-            (minibatch, output length), shorter labels are padded to the
-            length of the longest label.
-        input_lengths (IntTensor): 1D tensor of number input time-steps
-            for each example.
-        label_lengths (IntTensor): 1D tensor of label lengths for
-            each example.
-        blank (int, optional): Integer id of blank label (default is 0).
-
-    Returns:
-        costs (FloatTensor): .
-    """
     is_cuda = emissions.is_cuda
     device = emissions.device
     dtype = emissions.dtype
@@ -34,7 +14,7 @@ class Transducer(torch.autograd.Function):
     B, T, V = emissions.shape
     U = predictions.shape[1]
     certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
-    costs = torch.empty(size=(B,), device=emissions.device, dtype=dtype)
+    costs = torch.empty(size=(B,), device=device, dtype=dtype)
     alphas = torch.empty(size=(B, T, U), device=device, dtype=dtype)
     log_norms = torch.empty(size=(B, T, U), device=device, dtype=dtype)
     _transducer.forward(
@@ -114,6 +94,46 @@ class TransducerLoss(torch.nn.Module):
     return Transducer.apply(
         emissions, predictions, labels, input_lengths, label_lengths, self.blank)
 
+  def viterbi(self, emissions, predictions, input_lengths, label_lengths):
+    """
+    Performs viterbi decoding for the RNN-T graph (analagous to teacher forcing
+    in attention-based models). The predictions are computed using the previous
+    ground truth token and the lengths of the output are given.
+
+    The computation can be done on the CPU or GPU. The input tensors should be
+    on the same device.
+
+    Arguments:
+      emissions (FloatTensor): 3D tensor containing unnormalized emission
+        scores with shape (minibatch, input length, vocab size).
+      predictions (FloatTensor): 3D tensor containing unnormalized prediction
+        scores with shape (minibatch, output length + 1, vocab size).
+      input_lengths (IntTensor): 1D tensor containing the input lengths of
+        each example.
+      label_lengths (IntTensor): 1D tensor containing the label lengths of
+        each example.
+
+    Returns:
+      labels (IntTensor): 2D tensor with shape (minibatch, output length)
+      containing the predicted labels for each example in the batch. The labels
+      are arbitrarily padded to the maximum output length.
+    """
+    is_cuda = emissions.is_cuda
+    device = emissions.device
+
+    B, T, V = emissions.shape
+    U = predictions.shape[1]
+    labels = torch.empty(size=(B, U - 1), device=device, dtype=torch.int32)
+    certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
+    _transducer.viterbi(
+        emissions.data_ptr(),
+        predictions.data_ptr(),
+        labels.data_ptr(),
+        input_lengths.data_ptr(),
+        label_lengths.data_ptr(),
+        B, T, U, V, self.blank, is_cuda)
+    return labels
+
 
 def check_type(var, t, name):
   if var.dtype is not t:
@@ -155,8 +175,8 @@ def certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
   check_dim(emissions, 3, "emissions")
   check_dim(predictions, 3, "predictions")
   check_dim(labels, 2, "labels")
-  check_dim(input_lengths, 1, "input_lenghts")
-  check_dim(label_lengths, 1, "label_lenghts")
+  check_dim(input_lengths, 1, "input_lengths")
+  check_dim(label_lengths, 1, "label_lengths")
   max_T = torch.max(input_lengths)
   max_U = torch.max(label_lengths)
   T = emissions.shape[1]

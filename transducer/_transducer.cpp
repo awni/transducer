@@ -102,6 +102,44 @@ PYBIND11_MODULE(_transducer, m) {
       "alphabet_size"_a,
       "blank"_a,
       "use_cuda"_a);
+
+  m.def(
+      "viterbi",
+      [](const std::uintptr_t emissions,
+         const std::uintptr_t predictions,
+         std::uintptr_t labels,
+         const std::uintptr_t input_lengths,
+         const std::uintptr_t label_lengths,
+         int batch_size,
+         int max_input_length,
+         int max_label_length,
+         int alphabet_size,
+         int blank,
+         bool use_cuda) {
+        viterbi(
+            reinterpret_cast<float*>(emissions),
+            reinterpret_cast<float*>(predictions),
+            reinterpret_cast<int*>(labels),
+            reinterpret_cast<int*>(input_lengths),
+            reinterpret_cast<int*>(label_lengths),
+            batch_size,
+            max_input_length,
+            max_label_length,
+            alphabet_size,
+            blank,
+            use_cuda);
+      },
+      "emissions"_a,
+      "predictions"_a,
+      "labels"_a,
+      "input_lengths"_a,
+      "label_lengths"_a,
+      "batch_size"_a,
+      "max_input_length"_a,
+      "max_label_length"_a,
+      "alphabet_size"_a,
+      "blank"_a,
+      "use_cuda"_a);
 #ifdef VERSION_INFO
   m.attr("__version__") = VERSION_INFO;
 #else

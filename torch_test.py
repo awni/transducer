@@ -51,17 +51,14 @@ class TestTransducerLoss(unittest.TestCase):
           [-1.1112537384033203, 0.2380295693874359, 0.24793916940689087, 0.41780781745910645, 0.20747721195220947]]],
         dtype=torch.float32)
 
-    cost, egrads, pgrads = apply_transducer(emissions, predictions, labels)
-    self.assertTrue(torch.allclose(cost, expected_cost))
-    self.assertTrue(torch.allclose(egrads, expected_egrads))
-    self.assertTrue(torch.allclose(pgrads, expected_pgrads))
-
-    if torch.cuda.is_available():
+    for use_cuda in [False, True]:
+      if not torch.cuda.is_available() and use_cuda:
+        continue
       cost, egrads, pgrads = apply_transducer(
-          emissions, predictions, labels, use_cuda=True)
+          emissions, predictions, labels, use_cuda=use_cuda)
       self.assertTrue(torch.allclose(cost, expected_cost))
-#          self.assertTrue(torch.allclose(egrads, expected_egrads))
-#          self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+      self.assertTrue(torch.allclose(egrads, expected_egrads))
+      self.assertTrue(torch.allclose(pgrads, expected_pgrads))
 
   def test_big(self):
 
@@ -114,17 +111,43 @@ class TestTransducerLoss(unittest.TestCase):
           [-1.4029310941696167, 1.0439238548278809, 0.35900723934173584]]],
          dtype=torch.float32)
 
-    costs, egrads, pgrads = apply_transducer(emissions, predictions, labels)
-    self.assertTrue(torch.allclose(costs, expected_costs))
-    self.assertTrue(torch.allclose(egrads, expected_egrads))
-    self.assertTrue(torch.allclose(pgrads, expected_pgrads))
-
-    if torch.cuda.is_available():
+    for use_cuda in [False, True]:
+      if not torch.cuda.is_available() and use_cuda:
+        continue
       costs, egrads, pgrads = apply_transducer(
-          emissions, predictions, labels, use_cuda=True)
+          emissions, predictions, labels, use_cuda=use_cuda)
       self.assertTrue(torch.allclose(costs, expected_costs))
-#          self.assertTrue(torch.allclose(egrads, expected_egrads))
-#          self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+      self.assertTrue(torch.allclose(egrads, expected_egrads))
+      self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+
+  def test_viterbi(self):
+
+    emissions = torch.tensor([[
+        [0.0, 0.0, 6.0],
+        [0.3, 0.5, 0.5],
+        [0.1, 0.9, 0.7]]], dtype=torch.float32)
+
+    predictions = torch.tensor([[
+        [0.0, 4.0, 1.0],
+        [1.0, 8.0, 0.2],
+        [0.0, 1.5, 0.9]]], dtype=torch.float32)
+
+    input_lengths = torch.tensor([3], dtype=torch.int32)
+    label_lengths = torch.tensor([2], dtype=torch.int32)
+    expected_labels = torch.tensor([[2, 1]], dtype=torch.int32)
+
+    for use_cuda in [False, True]:
+      if not torch.cuda.is_available() and use_cuda:
+        continue
+      if use_cuda:
+        emissions = emissions.cuda()
+        predictions = predictions.cuda()
+        input_lengths = input_lengths.cuda()
+        label_lengths = label_lengths.cuda()
+      labels = TransducerLoss().viterbi(
+          emissions, predictions, input_lengths, label_lengths)
+      labels = labels.cpu()
+      self.assertTrue(torch.equal(labels, expected_labels))
 
 
 if __name__ == "__main__":
