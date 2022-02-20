@@ -68,7 +68,7 @@ void logNormsKernel(
     // Load tiles into shared memory
     for (int j = 0; j < ELEMS_PER_THREAD; j++) {
       int tidy = j * blockDim.y + threadIdx.y;
-      if ((ts + threadIdx.y) < T && (i + threadIdx.x) < alphabetSize) {
+      if ((ts + tidy) < T && (i + threadIdx.x) < alphabetSize) {
         eTile[tidy][threadIdx.x] = emissions[(ts + tidy) * alphabetSize + i + threadIdx.x];
       } else {
         eTile[tidy][threadIdx.x] = kNegInf;
@@ -98,7 +98,7 @@ void logNormsKernel(
     // Load tiles into shared memory
     for (int j = 0; j < ELEMS_PER_THREAD; j++) {
       int tidy = j * blockDim.y + threadIdx.y;
-      if ((ts + threadIdx.y) < T && (i + threadIdx.x) < alphabetSize) {
+      if ((ts + tidy) < T && (i + threadIdx.x) < alphabetSize) {
         eTile[tidy][threadIdx.x] = emissions[(ts + tidy) * alphabetSize + i + threadIdx.x];
       } else {
         eTile[tidy][threadIdx.x] = kNegInf;
