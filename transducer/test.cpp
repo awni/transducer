@@ -24,7 +24,14 @@ void testForwardBackward(
 
   std::vector<float> costs(batchSize);
   std::vector<float> alphas(batchSize * maxLabelLength * maxInputLength);
-  std::vector<float> logNorms(batchSize * maxLabelLength * maxInputLength);
+  auto logNorms = computeLogNorms(
+      emissions,
+      predictions,
+      inputLengths,
+      labelLengths,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize);
 
   forward(
       emissions.data(),
@@ -46,11 +53,13 @@ void testForwardBackward(
 
   std::vector<float> egrads(emissions.size());
   std::vector<float> pgrads(predictions.size());
+  std::vector<float> lngrads(logNorms.size());
   backward(
       emissions.data(),
       predictions.data(),
       egrads.data(),
       pgrads.data(),
+      lngrads.data(),
       alphas.data(),
       logNorms.data(),
       labels.data(),
@@ -62,6 +71,19 @@ void testForwardBackward(
       alphabetSize,
       blank,
       false);
+
+  accumulateGrads(
+      emissions,
+      predictions,
+      egrads,
+      pgrads,
+      lngrads,
+      logNorms,
+      inputLengths,
+      labelLengths,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize);
 
   checkClose(egrads, expectedEgrads);
   checkClose(pgrads, expectedPgrads);

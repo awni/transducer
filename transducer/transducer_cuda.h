@@ -11,23 +11,12 @@ namespace cuda {
 
 void cudaCheck(cudaError_t err, const char* file, int line);
 
-void computeLogNorms(
-    const float* emissions,
-    const float* predictions,
-    float* logNorms,
-    const int* inputLengths,
-    const int* labelLengths,
-    int batchSize,
-    int maxInputLength,
-    int maxLabelLength,
-    int alphabetSize);
-
 void forward(
     const float* emissions,
     const float* predictions,
     float* costs,
     float* alphas,
-    float* logNorms,
+    const float* logNorms,
     const int* labels,
     const int* inputLengths,
     const int* labelLengths,
@@ -42,6 +31,7 @@ void backward(
     const float* predictions,
     float* egrads,
     float* pgrads,
+    float* lngrads,
     const float* alphas,
     const float* logNorms,
     const int* labels,

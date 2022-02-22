@@ -1,14 +1,11 @@
 #include <cmath>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <numeric>
 #include <tuple>
 
 #include "test.h"
 #include "transducer.h"
 #include "transducer_cuda.h"
-
-const float kInf = std::numeric_limits<float>::infinity();
 
 float* deviceAlloc(size_t size) {
   float* ptr;
@@ -78,11 +75,20 @@ callForwardBackward(
 
   std::vector<float> costs(batchSize);
   std::vector<float> alphas(batchSize * maxInputLength * maxLabelLength);
-  std::vector<float> logNorms(batchSize * maxInputLength * maxLabelLength);
+  auto logNorms = computeLogNorms(
+      emissions,
+      predictions,
+      inputLengths,
+      labelLengths,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize);
+
   std::vector<float> egrads(emissions.size());
   std::vector<float> pgrads(predictions.size());
-  const float* emissionsPtr, *predictionsPtr;
-  float* costsPtr, *alphasPtr, *logNormsPtr, *egradsPtr, *pgradsPtr;
+  std::vector<float> lngrads(logNorms.size());
+  const float* emissionsPtr, *predictionsPtr, *logNormsPtr;
+  float* costsPtr, *alphasPtr, *egradsPtr, *pgradsPtr, *lngradsPtr;
   const int* labelsPtr, *inputLengthsPtr, *labelLengthsPtr;
   if (useCuda) {
     emissionsPtr = deviceCopy(emissions);
@@ -92,9 +98,10 @@ callForwardBackward(
     labelLengthsPtr = deviceCopy(labelLengths);
     costsPtr = deviceAlloc(batchSize);
     alphasPtr = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
-    logNormsPtr = deviceAlloc(batchSize * maxInputLength * maxLabelLength);
+    logNormsPtr = deviceCopy(logNorms);
     egradsPtr = deviceAlloc(emissions.size());
     pgradsPtr = deviceAlloc(predictions.size());
+    lngradsPtr = deviceAlloc(logNorms.size());
   } else {
     emissionsPtr = emissions.data();
     predictionsPtr = predictions.data();
@@ -106,6 +113,7 @@ callForwardBackward(
     costsPtr = costs.data();
     egradsPtr = egrads.data();
     pgradsPtr = pgrads.data();
+    lngradsPtr = lngrads.data();
   }
 
   forward(
@@ -129,6 +137,7 @@ callForwardBackward(
       predictionsPtr,
       egradsPtr,
       pgradsPtr,
+      lngradsPtr,
       alphasPtr,
       logNormsPtr,
       labelsPtr,
@@ -140,11 +149,11 @@ callForwardBackward(
       alphabetSize,
       blank,
       useCuda);
-
   if (useCuda) {
     hostCopy(costsPtr, costs);
     hostCopy(egradsPtr, egrads);
     hostCopy(pgradsPtr, pgrads);
+    hostCopy(lngradsPtr, lngrads);
     deviceFree(emissionsPtr);
     deviceFree(predictionsPtr);
     deviceFree(labelsPtr);
@@ -155,126 +164,22 @@ callForwardBackward(
     deviceFree(logNormsPtr);
     deviceFree(egradsPtr);
     deviceFree(pgradsPtr);
+    deviceFree(lngradsPtr);
   }
+
+  accumulateGrads(
+      emissions,
+      predictions,
+      egrads,
+      pgrads,
+      lngrads,
+      logNorms,
+      inputLengths,
+      labelLengths,
+      maxInputLength,
+      maxLabelLength,
+      alphabetSize);
   return std::make_tuple(costs, egrads, pgrads);
-}
-
-void logNormsTest() {
-  auto checkLogNorms = [](
-      const std::vector<float>& emissions,
-      const std::vector<float>& predictions,
-      const std::vector<int>& inputLengths,
-      const std::vector<int>& labelLengths,
-      int batchSize,
-      int alphabetSize,
-      int maxT,
-      int maxU) {
-    auto emissionsD = deviceCopy(emissions);
-    auto predictionsD = deviceCopy(predictions);
-    auto inputLengthsD = deviceCopy(inputLengths);
-    auto labelLengthsD = deviceCopy(labelLengths);
-    size_t lNormSize = maxT * maxU * batchSize;
-    auto logNormsD = deviceAlloc(lNormSize);
-    cuda::computeLogNorms(
-        emissionsD,
-        predictionsD,
-        logNormsD,
-        inputLengthsD,
-        labelLengthsD,
-        batchSize,
-        maxT,
-        maxU,
-        alphabetSize);
-    std::vector<float> lNorms(lNormSize);
-    hostCopy(logNormsD, lNorms);
-    deviceFree(emissionsD);
-    deviceFree(predictionsD);
-    deviceFree(inputLengthsD);
-    deviceFree(labelLengthsD);
-    deviceFree(logNormsD);
-
-    for (int b = 0; b < batchSize; ++b) {
-      int lIdx = b * maxT * maxU;
-      int T = inputLengths[b];
-      int U = labelLengths[b] + 1;
-      for (int t = 0; t < T; ++t) {
-        for (int u = 0; u < U; ++u) {
-          float maxScore = -kInf;
-          int eIdx = b * maxT * alphabetSize + t * alphabetSize;
-          int pIdx = b * maxU * alphabetSize + u * alphabetSize;
-          for (int i = 0; i < alphabetSize; ++i) {
-            maxScore = std::max(
-                maxScore,
-                emissions[eIdx + i] + predictions[pIdx + i]);
-          }
-          float logNorm = 0.0;
-          if (maxScore == kInf || maxScore == -kInf) {
-            logNorm = maxScore;
-          } else {
-            for (int i = 0; i < alphabetSize; ++i) {
-              logNorm += std::exp(
-                  emissions[eIdx + i] + predictions[pIdx + i] - maxScore);
-            }
-            logNorm = std::log(logNorm) + maxScore;
-          }
-          auto ln = lNorms[lIdx + t * U + u];
-          checkClose(logNorm, ln);
-        }
-      }
-    } 
-  };
-
-  {
-    // Small test
-    std::vector<float> emissions = {1.0, 2.0, 3.0, 4.0};
-    std::vector<float> predictions = {1.0, 2.0};
-    checkLogNorms(emissions, predictions, {2}, {0}, 1, 2, 2, 1);
-  }
-
-  {
-    std::vector<float> emissions(4, -kInf);
-    std::vector<float> predictions(2, -kInf);
-    checkLogNorms(emissions, predictions, {2}, {0}, 1, 2, 2, 1);
-  }
-
-  {
-    std::vector<float> emissions(4, kInf);
-    std::vector<float> predictions(2, kInf);
-    checkLogNorms(emissions, predictions, {2}, {0}, 1, 2, 2, 1);
-  }
- 
-  // A few larger tests with variable sizes
-  std::vector<int> Bs = {0, 1, 10};
-  std::vector<int> Ts = {0, 1, 10, 100};
-  std::vector<int> Us = {1, 10, 100};
-  std::vector<int> Vs = {0, 8, 20, 32, 101, 128};
-  auto randu = []() {
-    return static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX);
-  };
-  for (auto B : Bs) {
-  for (auto T : Ts) {
-  for (auto U : Us) {
-  for (auto V : Vs) {
-    std::vector<float> emissions(B * T * V);
-    std::generate(emissions.begin(), emissions.end(), randu);
-    std::vector<float> predictions(B * U * V);
-    std::generate(predictions.begin(), predictions.end(), randu);
-    std::vector<int> inputLengths(B);
-    std::generate(
-        inputLengths.begin(),
-        inputLengths.end(),
-        [T](){ return std::rand() % (T + 1); });
-    std::vector<int> labelLengths(B);
-    std::generate(
-        labelLengths.begin(),
-        labelLengths.end(),
-        [U](){ return std::rand() % U; });
-    checkLogNorms(
-        emissions, predictions, inputLengths, labelLengths, B, V, T, U);
-  }
-  }
-  }
-  }
 }
 
 void tinyTest() {
@@ -574,7 +479,6 @@ void viterbiTest() {
 }
 
 int main() {
-  TEST(logNormsTest);
   TEST(tinyTest);
   TEST(smallTest);
   TEST(bigTest);

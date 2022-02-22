@@ -27,6 +27,12 @@ def apply_transducer(emissions, predictions, labels, use_cuda=False):
   torch.sum(costs).backward()
   return costs.cpu(), emissions.grad.cpu(), predictions.grad.cpu()
 
+def tensor_close(a, b, use_cuda):
+  if use_cuda:
+    return torch.allclose(a, b, 1e-3, 1e-3)
+  else:
+    return torch.allclose(a, b)
+
 
 class TestTransducerLoss(unittest.TestCase):
 
@@ -56,9 +62,9 @@ class TestTransducerLoss(unittest.TestCase):
         continue
       cost, egrads, pgrads = apply_transducer(
           emissions, predictions, labels, use_cuda=use_cuda)
-      self.assertTrue(torch.allclose(cost, expected_cost))
-      self.assertTrue(torch.allclose(egrads, expected_egrads))
-      self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+      self.assertTrue(tensor_close(cost, expected_cost, use_cuda))
+      self.assertTrue(tensor_close(egrads, expected_egrads, use_cuda))
+      self.assertTrue(tensor_close(pgrads, expected_pgrads, use_cuda))
 
   def test_big(self):
 
@@ -116,9 +122,9 @@ class TestTransducerLoss(unittest.TestCase):
         continue
       costs, egrads, pgrads = apply_transducer(
           emissions, predictions, labels, use_cuda=use_cuda)
-      self.assertTrue(torch.allclose(costs, expected_costs))
-      self.assertTrue(torch.allclose(egrads, expected_egrads))
-      self.assertTrue(torch.allclose(pgrads, expected_pgrads))
+      self.assertTrue(tensor_close(costs, expected_costs, use_cuda))
+      self.assertTrue(tensor_close(egrads, expected_egrads, use_cuda))
+      self.assertTrue(tensor_close(pgrads, expected_pgrads, use_cuda))
 
   def test_viterbi(self):
 

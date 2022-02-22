@@ -9,6 +9,7 @@
 
 #include "transducer.h"
 #include "transducer_cuda.h"
+#include "test.h"
 
 #define TIME(FUNC) \
   { \
@@ -95,7 +96,13 @@ void timeTransducer(int B, int T, int U, int V) {
   auto labelLengthsD = deviceCopy(labelLengths);
   auto costs = deviceAlloc(B);
   auto alphas = deviceAlloc(B * T * (U + 1));
-  auto logNorms = deviceAlloc(B * T * (U + 1));
+  auto logNorms = computeLogNorms(
+      emissions,
+      predictions,
+      inputLengths,
+      labelLengths,
+      T, U + 1, V);
+  auto logNormsD = deviceCopy(logNorms);
 
   auto transducerForward = [=]() {
       forward(
@@ -103,7 +110,7 @@ void timeTransducer(int B, int T, int U, int V) {
           predictionsD,
           costs,
           alphas,
-          logNorms,
+          logNormsD,
           labelsD,
           inputLengthsD,
           labelLengthsD,
@@ -113,14 +120,16 @@ void timeTransducer(int B, int T, int U, int V) {
 
   auto egrads = deviceAlloc(B * T * V);
   auto pgrads = deviceAlloc(B * (U + 1) * V);
+  auto lngrads = deviceAlloc(B * T * (U + 1));
   auto transducerBackward = [=]() {
       backward(
           emissionsD,
           predictionsD,
           egrads,
           pgrads,
+          lngrads,
           alphas,
-          logNorms,
+          logNormsD,
           labelsD,
           inputLengthsD,
           labelLengthsD,
@@ -135,9 +144,10 @@ void timeTransducer(int B, int T, int U, int V) {
   deviceFree(labelLengthsD);
   deviceFree(costs);
   deviceFree(alphas);
-  deviceFree(logNorms);
+  deviceFree(logNormsD);
   deviceFree(egrads);
   deviceFree(pgrads);
+  deviceFree(lngrads);
 }
 
 int main() {

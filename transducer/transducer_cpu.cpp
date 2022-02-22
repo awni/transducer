@@ -27,31 +27,11 @@ inline int idx2(int t, int u, int U) {
   return t * U + u;
 }
 
-void computeLogNorms(
-    float* logNorms,
-    const float* emissions,
-    const float* predictions,
-    int T, int U, int V) {
-  for (int t = 0; t < T; ++t) {
-    for (int u = 0; u < U; ++u) {
-      float maxScore = kNegInf;
-      for (int v = 0; v < V; ++v) {
-        maxScore = std::max(maxScore, emissions[idx2(t, v, V)] + predictions[idx2(u, v, V)]);
-      }
-      float expSum = 0.0;
-      for (int v = 0; v < V; ++v) {
-        expSum += std::exp(emissions[idx2(t, v, V)] + predictions[idx2(u, v, V)] - maxScore);
-      }
-      logNorms[idx2(t, u, U)] = std::log(expSum) + maxScore;
-    }
-  }
-}
-
 float forwardSingle(
     const float* emissions,
     const float* predictions,
     float* alphas,
-    float* logNorms,
+    const float* logNorms,
     const int* labels,
     int blank, int T,
     int U, int V) {
@@ -59,8 +39,6 @@ float forwardSingle(
   if (T == 0 || U == 0) {
     return kInf;
   }
-
-  computeLogNorms(logNorms, emissions, predictions, T, U, V);
 
   alphas[0] = 0;
   for (int t = 1; t < T; t++) {
@@ -105,6 +83,7 @@ void backwardSingle(
     const float* predictions,
     float* egrads,
     float* pgrads,
+    float* dalphas,
     const float* alphas,
     const float* logNorms,
     const int* labels,
@@ -113,8 +92,7 @@ void backwardSingle(
   if (T == 0 || U == 0) {
     return;
   }
-  float* dalphas = (float*) malloc(T * U * sizeof(float));
-  dalphas[idx2(T-1, U-1, U)] = -1.0;
+  dalphas[idx2(T-1, U-1, U)] = 1.0;
   egrads[idx2(T-1, blank, V)] = -1.0;
   pgrads[idx2(U-1, blank, V)] = -1.0;
 
@@ -126,8 +104,8 @@ void backwardSingle(
         - logNorms[idx2(t, U-1, U)]
         - alphas[idx2(t+1, U-1, U)]);
     dalphas[idx2(t, U-1, U)] = g;
-    egrads[idx2(t, blank, V)] += g;
-    pgrads[idx2(U-1, blank, V)] += g;
+    egrads[idx2(t, blank, V)] -= g;
+    pgrads[idx2(U-1, blank, V)] -= g;
   }
   for (int u = U-2; u >= 0; u--) {
     float g = dalphas[idx2(T-1, u+1, U)] * std::exp(
@@ -137,8 +115,8 @@ void backwardSingle(
         - logNorms[idx2(T-1, u, U)]
         - alphas[idx2(T-1, u+1, U)]);
     dalphas[idx2(T-1, u, U)] = g;
-    egrads[idx2(T-1, labels[u], V)] += g;
-    pgrads[idx2(u, labels[u], V)] += g;
+    egrads[idx2(T-1, labels[u], V)] -= g;
+    pgrads[idx2(u, labels[u], V)] -= g;
   }
 
   for (int t = T-2; t >= 0; t--) {
@@ -156,28 +134,12 @@ void backwardSingle(
           - logNorms[idx2(t, u, U)]
           - alphas[idx2(t, u+1, U)]);
       dalphas[idx2(t, u, U)] = noEmit + emit;
-      egrads[idx2(t, blank, V)] += noEmit;
-      pgrads[idx2(u, blank, V)] += noEmit;
-      egrads[idx2(t, labels[u], V)] += emit;
-      pgrads[idx2(u, labels[u], V)] += emit;
+      egrads[idx2(t, blank, V)] -= noEmit;
+      pgrads[idx2(u, blank, V)] -= noEmit;
+      egrads[idx2(t, labels[u], V)] -= emit;
+      pgrads[idx2(u, labels[u], V)] -= emit;
    }
   }
-
-  // Accumulate gradients
-  for (int t = 0; t < T; ++t) {
-    for (int u = 0; u < U; ++u) {
-      float dalpha = dalphas[idx2(t, u, U)];
-      float logNorm = logNorms[idx2(t, u, U)];
-      for (int v = 0; v < V; ++v) {
-        float score = std::exp(
-            emissions[idx2(t, v, V)] + predictions[idx2(u, v, V)] - logNorm);
-        egrads[idx2(t, v, V)] -= dalpha * score;
-        pgrads[idx2(u, v, V)] -= dalpha * score;
-      }
-    }
-  }
-
-  free(dalphas);
 }
 
 void viterbiSingle(
@@ -263,7 +225,7 @@ void forward(
     const float* predictions,
     float* costs,
     float* alphas,
-    float* logNorms,
+    const float* logNorms,
     const int* labels,
     const int* inputLengths,
     const int* labelLengths,
@@ -294,6 +256,7 @@ void backward(
     const float* predictions,
     float* egrads,
     float* pgrads,
+    float* lngrads,
     const float* alphas,
     const float* logNorms,
     const int* labels,
@@ -311,6 +274,7 @@ void backward(
     int eOffset = mb * maxInputLength * alphabetSize;
     int pOffset = mb * maxLabelLength * alphabetSize;
     int labelOffset = mb * (maxLabelLength - 1);
+    int lnOffset = mb * maxInputLength * maxLabelLength;
     memset(
         (void*)(egrads + eOffset),
         0,
@@ -319,13 +283,18 @@ void backward(
         (void*)(pgrads + pOffset),
         0,
         sizeof(float) * maxLabelLength * alphabetSize);
+    memset(
+        (void*)(lngrads + lnOffset),
+        0,
+        sizeof(float) * maxInputLength * maxLabelLength);
     backwardSingle(
         emissions + eOffset,
         predictions + pOffset,
         egrads + eOffset,
         pgrads + pOffset,
-        alphas + mb * maxInputLength * maxLabelLength,
-        logNorms + mb * maxInputLength * maxLabelLength,
+        lngrads + lnOffset,
+        alphas + lnOffset,
+        logNorms + lnOffset,
         labels + labelOffset,
         blank, T, U, alphabetSize);
   }

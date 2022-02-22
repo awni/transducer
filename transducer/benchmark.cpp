@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "transducer.h"
+#include "test.h"
 
 #define TIME(FUNC) \
   { \
@@ -49,7 +50,12 @@ void timeTransducer(int B, int T, int U, int V) {
   std::vector<int> labelLengths(B, U);
   std::vector<float> costs(B);
   std::vector<float> alphas(B * T * (U + 1));
-  std::vector<float> logNorms(B * T * (U + 1));
+  auto logNorms = computeLogNorms(
+      emissions,
+      predictions,
+      inputLengths,
+      labelLengths,
+      T, U + 1, V);
 
   auto transducerForward = [&]() {
       forward(
@@ -67,12 +73,14 @@ void timeTransducer(int B, int T, int U, int V) {
 
   std::vector<float> egrads(B * T * V);
   std::vector<float> pgrads(B * (U + 1) * V);
+  std::vector<float> lngrads(logNorms.size());
   auto transducerBackward = [&]() {
       backward(
           emissions.data(),
           predictions.data(),
           egrads.data(),
           pgrads.data(),
+          lngrads.data(),
           alphas.data(),
           logNorms.data(),
           labels.data(),
