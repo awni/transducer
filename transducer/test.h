@@ -72,7 +72,7 @@ std::vector<float> computeLogNorms(
         for (int v = 0; v < V; ++v) {
           expSum += std::exp(emissions[eo + t * V + v] + predictions[po + u * V + v] - maxScore);
         }
-        logNorms[lo + t * U + u] = std::log(expSum) + maxScore;
+        logNorms[lo + t * maxU + u] = std::log(expSum) + maxScore;
       }
     }
   }
@@ -99,8 +99,8 @@ void accumulateGrads(
 
     for (int t = 0; t < T; ++t) {
       for (int u = 0; u < U; ++u) {
-        float dalpha = dalphas[lo + t * U + u];
-        float logNorm = logNorms[lo + t * U + u];
+        float dalpha = dalphas[lo + t * maxU + u];
+        float logNorm = logNorms[lo + t * maxU + u];
         for (int v = 0; v < V; ++v) {
           float score = std::exp(
             emissions[eo + t * V + v] + predictions[po + u * V + v] - logNorm);

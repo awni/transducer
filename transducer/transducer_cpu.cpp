@@ -34,7 +34,7 @@ float forwardSingle(
     const float* logNorms,
     const int* labels,
     int blank, int T,
-    int U, int V) {
+    int U, int maxU, int V) {
 
   if (T == 0 || U == 0) {
     return kInf;
@@ -42,38 +42,38 @@ float forwardSingle(
 
   alphas[0] = 0;
   for (int t = 1; t < T; t++) {
-    alphas[idx2(t, 0, U)] = alphas[idx2(t-1, 0, U)]
+    alphas[idx2(t, 0, maxU)] = alphas[idx2(t-1, 0, maxU)]
       + emissions[idx2(t-1, blank, V)]
       + predictions[idx2(0, blank, V)]
-      - logNorms[idx2(t-1, 0, U)];
+      - logNorms[idx2(t-1, 0, maxU)];
   }
 
   for (int u = 1; u < U; u++) {
-    alphas[idx2(0, u, U)] = alphas[idx2(0, u-1, U)]
+    alphas[idx2(0, u, maxU)] = alphas[idx2(0, u-1, maxU)]
       + emissions[idx2(0, labels[u-1], V)]
       + predictions[idx2(u-1, labels[u-1], V)]
-      - logNorms[idx2(0, u-1, U)];
+      - logNorms[idx2(0, u-1, maxU)];
   }
 
   for (int t = 1; t < T; t++) {
     for (int u = 1; u < U; u++) {
-      int prevIdx = idx2(t-1, u, U);
+      int prevIdx = idx2(t-1, u, maxU);
       float noEmit = alphas[prevIdx]
         + emissions[idx2(t-1, blank, V)]
         + predictions[idx2(u, blank, V)]
         - logNorms[prevIdx];
-      prevIdx = idx2(t, u-1, U);
+      prevIdx = idx2(t, u-1, maxU);
       float emit = alphas[prevIdx]
         + emissions[idx2(t, labels[u-1], V)]
         + predictions[idx2(u-1, labels[u-1], V)]
         - logNorms[prevIdx];
-      alphas[idx2(t, u, U)] = logSumExp(emit, noEmit);
+      alphas[idx2(t, u, maxU)] = logSumExp(emit, noEmit);
     }
   }
-  float cost = alphas[idx2(T-1, U-1, U)]
+  float cost = alphas[idx2(T-1, U-1, maxU)]
     + emissions[idx2(T-1, blank, V)]
     + predictions[idx2(U-1, blank, V)]
-    - logNorms[idx2(T-1, U-1, U)];
+    - logNorms[idx2(T-1, U-1, maxU)];
 
   return -cost;
 }
@@ -88,52 +88,52 @@ void backwardSingle(
     const float* logNorms,
     const int* labels,
     int blank, int T,
-    int U, int V) {
+    int U, int maxU, int V) {
   if (T == 0 || U == 0) {
     return;
   }
-  dalphas[idx2(T-1, U-1, U)] = 1.0;
+  dalphas[idx2(T-1, U-1, maxU)] = 1.0;
   egrads[idx2(T-1, blank, V)] = -1.0;
   pgrads[idx2(U-1, blank, V)] = -1.0;
 
   for (int t = T-2; t >= 0; t--) {
-    float g = dalphas[idx2(t+1, U-1, U)] * std::exp(
-        alphas[idx2(t, U-1, U)]
+    float g = dalphas[idx2(t+1, U-1, maxU)] * std::exp(
+        alphas[idx2(t, U-1, maxU)]
         + emissions[idx2(t, blank, V)]
         + predictions[idx2(U-1, blank, V)]
-        - logNorms[idx2(t, U-1, U)]
-        - alphas[idx2(t+1, U-1, U)]);
-    dalphas[idx2(t, U-1, U)] = g;
+        - logNorms[idx2(t, U-1, maxU)]
+        - alphas[idx2(t+1, U-1, maxU)]);
+    dalphas[idx2(t, U-1, maxU)] = g;
     egrads[idx2(t, blank, V)] -= g;
     pgrads[idx2(U-1, blank, V)] -= g;
   }
   for (int u = U-2; u >= 0; u--) {
-    float g = dalphas[idx2(T-1, u+1, U)] * std::exp(
-        alphas[idx2(T-1, u, U)]
+    float g = dalphas[idx2(T-1, u+1, maxU)] * std::exp(
+        alphas[idx2(T-1, u, maxU)]
         + emissions[idx2(T-1, labels[u], V)]
         + predictions[idx2(u, labels[u], V)]
-        - logNorms[idx2(T-1, u, U)]
-        - alphas[idx2(T-1, u+1, U)]);
-    dalphas[idx2(T-1, u, U)] = g;
+        - logNorms[idx2(T-1, u, maxU)]
+        - alphas[idx2(T-1, u+1, maxU)]);
+    dalphas[idx2(T-1, u, maxU)] = g;
     egrads[idx2(T-1, labels[u], V)] -= g;
     pgrads[idx2(u, labels[u], V)] -= g;
   }
 
   for (int t = T-2; t >= 0; t--) {
     for (int u = U-2; u >= 0; u--) {
-      float noEmit = dalphas[idx2(t+1, u, U)] * std::exp(
-          alphas[idx2(t, u, U)]
+      float noEmit = dalphas[idx2(t+1, u, maxU)] * std::exp(
+          alphas[idx2(t, u, maxU)]
           + emissions[idx2(t, blank, V)]
           + predictions[idx2(u, blank, V)]
-          - logNorms[idx2(t, u, U)]
-          - alphas[idx2(t+1, u, U)]);
-      float emit = dalphas[idx2(t, u+1, U)] * std::exp(
-          alphas[idx2(t, u, U)]
+          - logNorms[idx2(t, u, maxU)]
+          - alphas[idx2(t+1, u, maxU)]);
+      float emit = dalphas[idx2(t, u+1, maxU)] * std::exp(
+          alphas[idx2(t, u, maxU)]
           + emissions[idx2(t, labels[u], V)]
           + predictions[idx2(u, labels[u], V)]
-          - logNorms[idx2(t, u, U)]
-          - alphas[idx2(t, u+1, U)]);
-      dalphas[idx2(t, u, U)] = noEmit + emit;
+          - logNorms[idx2(t, u, maxU)]
+          - alphas[idx2(t, u+1, maxU)]);
+      dalphas[idx2(t, u, maxU)] = noEmit + emit;
       egrads[idx2(t, blank, V)] -= noEmit;
       pgrads[idx2(u, blank, V)] -= noEmit;
       egrads[idx2(t, labels[u], V)] -= emit;
@@ -247,7 +247,7 @@ void forward(
         alphas + mb * maxInputLength * maxLabelLength,
         logNorms + mb * maxInputLength * maxLabelLength,
         labels + labelOffset,
-        blank, T, U, alphabetSize);
+        blank, T, U, maxLabelLength, alphabetSize);
   }
 }
 
@@ -296,7 +296,7 @@ void backward(
         alphas + lnOffset,
         logNorms + lnOffset,
         labels + labelOffset,
-        blank, T, U, alphabetSize);
+        blank, T, U, maxLabelLength, alphabetSize);
   }
 }
 

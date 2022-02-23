@@ -73,27 +73,27 @@ void forwardKernel(
       u = tidx;
     }
     for (; t >= 0 && u < U; t -= blockDim.x, u += blockDim.x) {
-      int prevIdx = idx2(t-1, u, U);
+      int prevIdx = idx2(t-1, u, maxU);
       float noEmit = (t == 0) ? kNegInf : 
           alphas[prevIdx] +
           emissions[idx2(t-1, blank, V)] +
           predictions[idx2(u, blank, V)] -
           logNorms[prevIdx];
-      prevIdx = idx2(t, u-1, U);
+      prevIdx = idx2(t, u-1, maxU);
       float emit = (u == 0) ? kNegInf :
           alphas[prevIdx] +
           emissions[idx2(t, labels[u-1], V)] +
           predictions[idx2(u-1, labels[u-1], V)] -
           logNorms[prevIdx];
-      alphas[idx2(t, u, U)] = logSumExp(emit, noEmit);
+      alphas[idx2(t, u, maxU)] = logSumExp(emit, noEmit);
     }
     __syncthreads();
   }
   if (tidx == 0) {
-    costs[mb] = -(alphas[idx2(T-1, U-1, U)]
+    costs[mb] = -(alphas[idx2(T-1, U-1, maxU)]
       + emissions[idx2(T-1, blank, V)]
       + predictions[idx2(U-1, blank, V)]
-      - logNorms[idx2(T-1, U-1, U)]);
+      - logNorms[idx2(T-1, U-1, maxU)]);
   }
 }
 
@@ -133,7 +133,7 @@ void backwardKernel(
   labels += (maxU - 1) * mb;
 
   if (tidx == 0) {
-    dalphas[idx2(T-1, U-1, U)] = 1.0f;
+    dalphas[idx2(T-1, U-1, maxU)] = 1.0f;
     egrads[idx2(T-1, blank, V)] = -1.0f;
     pgrads[idx2(U-1, blank, V)] = -1.0f;
   }
@@ -150,28 +150,28 @@ void backwardKernel(
       u = tidx;
     }
     for (; t >= 0 && u < U; t -= blockDim.x, u += blockDim.x) {
-      float alpha_ln = alphas[idx2(t, u, U)] - logNorms[idx2(t, u, U)];
+      float alpha_ln = alphas[idx2(t, u, maxU)] - logNorms[idx2(t, u, maxU)];
       float noEmit = 0.0f;
       if (t < (T - 1)) {
-        noEmit = dalphas[idx2(t+1, u, U)] *
+        noEmit = dalphas[idx2(t+1, u, maxU)] *
           expf(alpha_ln +
               emissions[idx2(t, blank, V)] +
               predictions[idx2(u, blank, V)] -
-              alphas[idx2(t+1, u, U)]);
+              alphas[idx2(t+1, u, maxU)]);
         egrads[idx2(t, blank, V)] -= noEmit;
         pgrads[idx2(u, blank, V)] -= noEmit;
       }
       float emit = 0.0f;
       if (u < (U - 1)) {
-        emit = dalphas[idx2(t, u+1, U)] *
+        emit = dalphas[idx2(t, u+1, maxU)] *
           expf(alpha_ln +
               emissions[idx2(t, labels[u], V)] +
               predictions[idx2(u, labels[u], V)] -
-              alphas[idx2(t, u+1, U)]);
+              alphas[idx2(t, u+1, maxU)]);
         egrads[idx2(t, labels[u], V)] -= emit;
         pgrads[idx2(u, labels[u], V)] -= emit;
       }
-      dalphas[idx2(t, u, U)] = noEmit + emit;
+      dalphas[idx2(t, u, maxU)] = noEmit + emit;
     }
     __syncthreads();
   }

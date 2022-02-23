@@ -10,13 +10,11 @@ class Transducer(torch.autograd.Function):
     is_cuda = emissions.is_cuda
     device = emissions.device
     dtype = emissions.dtype
-
     B, T, V = emissions.shape
     U = predictions.shape[1]
     certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
     costs = torch.empty(size=(B,), device=device, dtype=dtype)
     alphas = torch.empty(size=(B, T, U), device=device, dtype=dtype)
-    #log_norms = torch.empty(size=(B, T, U), device=device, dtype=dtype)
     _transducer.forward(
         emissions.data_ptr(),
         predictions.data_ptr(),
@@ -191,5 +189,5 @@ def certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
   U = predictions.shape[1]
   if T != max_T:
     raise ValueError("Input length mismatch")
-  if U != max_U + 1:
+  if U < max_U + 1:
     raise ValueError("Output length mismatch")
