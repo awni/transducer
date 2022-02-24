@@ -34,32 +34,40 @@ def time_transducer(B, T, U, V, use_cuda=False):
   input_lengths = torch.tensor([T] * B, device=device, dtype=torch.int32)
   label_lengths = torch.tensor([U] * B, device=device, dtype=torch.int32)
 
+  torch_times = []
+  transducer_times = []
+
   def torch_rnnt_forward():
     logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
     return torchaudio.functional.rnnt_loss(
         logits, labels, input_lengths, label_lengths, blank=0, reduction='none')
 
-  msecs = timefunc(torch_rnnt_forward, use_cuda)
-  print(f"rnnt_forward: {msecs:.3f}(ms)")
+  try:
+    torch_times.append(timefunc(torch_rnnt_forward, use_cuda))
+  except:
+    pass
 
   def transducer_forward():
     return TransducerLoss()(
         emissions, predictions, labels, input_lengths, label_lengths)
 
-  msecs = timefunc(transducer_forward, use_cuda)
-  print(f"transducer_forward: {msecs:.3f}(ms)")
+  transducer_times.append(timefunc(transducer_forward, use_cuda))
 
-  logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
-  loss = torchaudio.functional.rnnt_loss(
-        logits, labels, input_lengths, label_lengths, blank=0, reduction='none')
-  loss = loss.sum()
-  def torch_rnnt_backward():
-    emissions.grad = None
-    predictions.grad = None
-    loss.backward(retain_graph=True)
+  try:
+    logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
+    loss = torchaudio.functional.rnnt_loss(
+          logits, labels, input_lengths, label_lengths, blank=0, reduction='none')
+    loss = loss.sum()
 
-  msecs = timefunc(torch_rnnt_backward, use_cuda)
-  print(f"rnnt_backward: {msecs:.3f}(ms)")
+    def torch_rnnt_backward():
+      emissions.grad = None
+      predictions.grad = None
+      loss.backward(retain_graph=True)
+
+    torch_times.append(timefunc(torch_rnnt_backward, use_cuda))
+  except:
+    pass
+
 
   loss = TransducerLoss()(
       emissions, predictions, labels, input_lengths, label_lengths)
@@ -69,8 +77,16 @@ def time_transducer(B, T, U, V, use_cuda=False):
     predictions.grad = None
     loss.backward(retain_graph=True)
 
-  msecs = timefunc(transducer_backward, use_cuda)
-  print(f"transducer_backward: {msecs:.3f}(ms)")
+  transducer_times.append(timefunc(transducer_backward, use_cuda))
+
+  print("transducer: forward {:.3f}, backward {:.3f}, total {:.3f}".format(
+    transducer_times[0], transducer_times[1], transducer_times[0] + transducer_times[1]))
+
+  if len(torch_times) != 2:
+    print("torch: OOM") 
+  else:
+    print("torch: forward {:.3f}, backward {:.3f}, total {:.3f}".format(
+      torch_times[0], torch_times[1], torch_times[0] + torch_times[1]))
 
 
 if __name__ == "__main__":
@@ -78,11 +94,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_cuda", action="store_true", help="Benchmark the cuda back-end.")
     args = parser.parse_args()
-    Bs = [2, 4, 16, 32]
-    Ts = [1000, 10000]
-    Us = [100, 500]
-    Vs = [2000, 10000]
+    Bs = [8, 32]
+    Ts = [2000]
+    Us = [100]
+    Vs = [100, 1000, 2000, 10000]
     for (B, T, U, V) in itertools.product(Bs, Ts, Us, Vs):
       time_transducer(B, T, U, V, use_cuda=args.use_cuda)
-      import sys
-      sys.exit(0)
