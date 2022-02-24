@@ -24,9 +24,9 @@ def time_transducer(B, T, U, V, use_cuda=False):
   print(f"Timing shape ({B}, {T}, {U}, {V})")
   device = torch.device("cuda" if use_cuda else "cpu")
   emissions = torch.rand(
-      (B, T, V), device=device, dtype=torch.float32, requires_grad=True)
+      (B, T, V), device=device, dtype=torch.float32, requires_grad=False)
   predictions = torch.rand(
-      (B, U + 1, V), device=device, dtype=torch.float32, requires_grad=True)
+      (B, U + 1, V), device=device, dtype=torch.float32, requires_grad=False)
 
   labels = torch.randint(
       low=1, high=V, size=(B, U), device=device, dtype=torch.int32)
@@ -52,6 +52,9 @@ def time_transducer(B, T, U, V, use_cuda=False):
         emissions, predictions, labels, input_lengths, label_lengths)
 
   transducer_times.append(timefunc(transducer_forward, use_cuda))
+
+  emissions.requires_grad = True
+  predictions.requires_grad = True
 
   try:
     logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
