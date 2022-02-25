@@ -62,7 +62,6 @@ void forwardKernel(
   }
   __syncthreads();
 
-  // Compute label offset
   for (int i = 1; i < (T + U - 1); ++i) {
     int t, u;
     if (i >= T) {
@@ -139,7 +138,6 @@ void backwardKernel(
   }
   __syncthreads();
 
-  // Compute label offset
   for (int i = (T + U - 3); i >= 0; --i) {
     int t, u;
     if (i >= T) {
@@ -208,7 +206,6 @@ void viterbiKernel(
   }
   __syncthreads();
 
-  // Compute label offset
   for (int i = 1; i < (T + U - 1); ++i) {
     int t, u;
     if (i >= T) {

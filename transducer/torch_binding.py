@@ -187,7 +187,7 @@ def certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
   max_U = torch.max(label_lengths)
   T = emissions.shape[1]
   U = predictions.shape[1]
-  if T != max_T:
+  if T < max_T:
     raise ValueError("Input length mismatch")
   if U < max_U + 1:
     raise ValueError("Output length mismatch")

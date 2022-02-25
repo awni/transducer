@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import itertools
+import importlib
 import unittest
 import numpy as np
 import torch
@@ -154,6 +156,55 @@ class TestTransducerLoss(unittest.TestCase):
           emissions, predictions, input_lengths, label_lengths)
       labels = labels.cpu()
       self.assertTrue(torch.equal(labels, expected_labels))
+
+  @unittest.skipIf(
+      importlib.util.find_spec("torchaudio") is None,
+      "torch audio not installed")
+  def test_compare_torch(self):
+    import torchaudio
+    Bs = [1, 2, 8]
+    Ts = [1, 200]
+    Us = [2, 10]
+    Vs = [30, 50]
+
+    for (B, T, U, V) in itertools.product(Bs, Ts, Us, Vs):
+      emissions = torch.rand(
+          (B, T, V), dtype=torch.float32, requires_grad=True)
+      predictions = torch.rand(
+          (B, U, V), dtype=torch.float32, requires_grad=True)
+      labels = torch.randint(
+          low=1, high=V, size=(B, U-1), dtype=torch.int32)
+      input_lengths = torch.randint(
+          low=1, high=T+1, size=(B,), dtype=torch.int32)
+      label_lengths = torch.randint(
+          low=1, high=U, size=(B,), dtype=torch.int32)
+      input_lengths[0] = T
+      label_lengths[0] = U-1
+
+      loss = TransducerLoss()(
+          emissions, predictions, labels, input_lengths, label_lengths)
+
+      logits = emissions.unsqueeze(2) + predictions.unsqueeze(1)
+      loss_torch = torchaudio.functional.rnnt_loss(
+        logits, labels, input_lengths, label_lengths, reduction="none", blank=0)
+
+      self.assertTrue(torch.allclose(loss, loss_torch))
+
+      loss.sum().backward()
+      egrad = emissions.grad
+      pgrad = predictions.grad
+
+      emissions.grad = None
+      predictions.grad = None
+
+      loss_torch.sum().backward()
+      torch_egrad = emissions.grad
+      torch_pgrad = predictions.grad
+
+      self.assertTrue(
+          torch.allclose(egrad, torch_egrad, rtol=1e-3, atol=1e-3))
+      self.assertTrue(
+          torch.allclose(pgrad, torch_pgrad, rtol=1e-3, atol=1e-3))
 
 
 if __name__ == "__main__":
