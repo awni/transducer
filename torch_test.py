@@ -207,5 +207,59 @@ class TestTransducerLoss(unittest.TestCase):
           torch.allclose(pgrad, torch_pgrad, rtol=1e-3, atol=1e-3))
 
 
+  def test_grad_check(self):
+    B = 3
+    T = 6
+    U = 3
+    V = 4
+    epsilon = 1e-2
+    emissions = torch.rand(
+        (B, T, V), dtype=torch.float32, requires_grad=True)
+    predictions = torch.rand(
+        (B, U, V), dtype=torch.float32, requires_grad=True)
+    labels = torch.randint(
+        low=1, high=V, size=(B, U-1), dtype=torch.int32)
+    input_lengths = torch.randint(
+        low=1, high=T+1, size=(B,), dtype=torch.int32)
+    label_lengths = torch.randint(
+        low=1, high=U, size=(B,), dtype=torch.int32)
+    input_lengths[0] = T
+    label_lengths[0] = U-1
+
+    loss = TransducerLoss()(
+        emissions, predictions, labels, input_lengths, label_lengths)
+    loss.sum().backward()
+    egrads = emissions.grad
+    pgrads = predictions.grad
+    emissions.requires_grad = False
+    predictions.requires_grad = False
+
+    for b in range(B):
+      for v in range(V):
+        # Grad check emissions
+        for t in range(T):
+          emissions[b, t, v] += epsilon
+          loss_up = TransducerLoss()(
+              emissions, predictions, labels, input_lengths, label_lengths)
+          emissions[b, t, v] -= 2 * epsilon
+          loss_down = TransducerLoss()(
+              emissions, predictions, labels, input_lengths, label_lengths)
+          emissions[b, t, v] += epsilon
+          num_grad = (loss_up.sum() - loss_down.sum()) / (2 * epsilon)
+          self.assertTrue(torch.isclose(num_grad, egrads[b, t, v], 1e-3, 1e-3))
+
+        # Grad check predictions 
+        for u in range(U):
+          predictions[b, u, v] += epsilon
+          loss_up = TransducerLoss()(
+              emissions, predictions, labels, input_lengths, label_lengths)
+          predictions[b, u, v] -= 2 * epsilon
+          loss_down = TransducerLoss()(
+              emissions, predictions, labels, input_lengths, label_lengths)
+          predictions[b, u, v] += epsilon
+          num_grad = (loss_up.sum() - loss_down.sum()) / (2 * epsilon)
+          self.assertTrue(torch.isclose(num_grad, pgrads[b, u, v], 1e-3, 1e-3))
+
+
 if __name__ == "__main__":
   unittest.main()
