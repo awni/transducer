@@ -190,22 +190,21 @@ class TestTransducerLoss(unittest.TestCase):
 
       self.assertTrue(torch.allclose(loss, loss_torch))
 
-      loss.sum().backward()
+      scales = torch.rand_like(loss)
+      (scales * loss).sum().backward()
       egrad = emissions.grad
       pgrad = predictions.grad
 
       emissions.grad = None
       predictions.grad = None
 
-      loss_torch.sum().backward()
+      (scales * loss_torch).sum().backward()
       torch_egrad = emissions.grad
       torch_pgrad = predictions.grad
-
       self.assertTrue(
           torch.allclose(egrad, torch_egrad, rtol=1e-3, atol=1e-3))
       self.assertTrue(
           torch.allclose(pgrad, torch_pgrad, rtol=1e-3, atol=1e-3))
-
 
   def test_grad_check(self):
     B = 3

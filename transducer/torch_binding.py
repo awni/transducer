@@ -32,10 +32,10 @@ class Transducer(torch.autograd.Function):
     return costs
 
   @staticmethod
-  def backward(ctx, cost):
-    is_cuda = cost.is_cuda
-    device = cost.device
-    dtype = cost.dtype
+  def backward(ctx, deltas):
+    is_cuda = deltas.is_cuda
+    device = deltas.device
+    dtype = deltas.dtype
     emissions, predictions, alphas, log_norms, labels, input_lengths, label_lengths = ctx.saved_tensors
     B, T, V = emissions.shape
     U = predictions.shape[1]
@@ -54,6 +54,9 @@ class Transducer(torch.autograd.Function):
         input_lengths.data_ptr(),
         label_lengths.data_ptr(),
         B, T, U, V, ctx.blank, is_cuda)
+    egrads = deltas[:, None, None] * egrads
+    pgrads = deltas[:, None, None] * pgrads
+    lngrads = deltas[:, None, None] * lngrads 
     return egrads, pgrads, lngrads, None, None, None, None
 
 
