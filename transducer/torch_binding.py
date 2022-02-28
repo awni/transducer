@@ -6,7 +6,7 @@ from . import _transducer
 class Transducer(torch.autograd.Function):
 
   @staticmethod
-  def forward(ctx, emissions, predictions, log_norms, labels, input_lengths, label_lengths, blank=0):
+  def forward(ctx, emissions, predictions, labels, input_lengths, label_lengths, blank=0):
     is_cuda = emissions.is_cuda
     device = emissions.device
     dtype = emissions.dtype
@@ -15,6 +15,12 @@ class Transducer(torch.autograd.Function):
     certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
     costs = torch.empty(size=(B,), device=device, dtype=dtype)
     alphas = torch.empty(size=(B, T, U), device=device, dtype=dtype)
+    maxEs = emissions.max(dim=2, keepdim=True)[0]
+    maxPs = predictions.max(dim=2, keepdim=True)[0]
+    expEs = torch.exp(emissions - maxEs)
+    expPs = torch.exp(predictions - maxPs)
+    expLNs = torch.bmm(expEs, expPs.transpose(1, 2))
+    log_norms = torch.log(expLNs) + maxEs + maxPs.transpose(1, 2)
     _transducer.forward(
         emissions.data_ptr(),
         predictions.data_ptr(),
@@ -27,7 +33,9 @@ class Transducer(torch.autograd.Function):
         B, T, U, V, blank, is_cuda)
     ctx.save_for_backward(
         emissions, predictions, alphas, log_norms,
-        labels, input_lengths, label_lengths)
+        labels, input_lengths, label_lengths,
+        expEs, expPs, expLNs)
+
     ctx.blank = blank
     return costs
 
@@ -36,7 +44,8 @@ class Transducer(torch.autograd.Function):
     is_cuda = deltas.is_cuda
     device = deltas.device
     dtype = deltas.dtype
-    emissions, predictions, alphas, log_norms, labels, input_lengths, label_lengths = ctx.saved_tensors
+    emissions, predictions, alphas, log_norms, labels, input_lengths, \
+        label_lengths, expEs, expPs, expLNs  = ctx.saved_tensors
     B, T, V = emissions.shape
     U = predictions.shape[1]
     egrads = torch.empty(size=(B, T, V), device=device, dtype=dtype)
@@ -54,10 +63,12 @@ class Transducer(torch.autograd.Function):
         input_lengths.data_ptr(),
         label_lengths.data_ptr(),
         B, T, U, V, ctx.blank, is_cuda)
+    lngrads = lngrads * expLNs.reciprocal()
+    egrads += expEs * torch.bmm(lngrads, expPs)
+    pgrads += expPs * torch.bmm(lngrads.transpose(1, 2), expEs)
     egrads = deltas[:, None, None] * egrads
     pgrads = deltas[:, None, None] * pgrads
-    lngrads = deltas[:, None, None] * lngrads 
-    return egrads, pgrads, lngrads, None, None, None, None
+    return egrads, pgrads, None, None, None, None
 
 
 class TransducerLoss(torch.nn.Module):
@@ -94,14 +105,8 @@ class TransducerLoss(torch.nn.Module):
       costs (FloatTensor): 1D tensor with shape (minibatch) containing the
         scores for each example in the batch.
     """
-    maxEs = emissions.max(dim=2, keepdim=True)[0]
-    maxPs = predictions.max(dim=2, keepdim=True)[0]
-    log_norms = torch.log(torch.bmm(
-        torch.exp(emissions - maxEs),
-        torch.exp((predictions - maxPs)).transpose(1, 2)))
-    log_norms = log_norms + maxEs + maxPs.transpose(1, 2)
     return Transducer.apply(
-        emissions, predictions, log_norms, labels, input_lengths, label_lengths, self.blank)
+        emissions, predictions, labels, input_lengths, label_lengths, self.blank)
 
   @torch.no_grad()
   def viterbi(self, emissions, predictions, input_lengths, label_lengths):
