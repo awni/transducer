@@ -103,6 +103,7 @@ class TransducerLoss(torch.nn.Module):
     return Transducer.apply(
         emissions, predictions, log_norms, labels, input_lengths, label_lengths, self.blank)
 
+  @torch.no_grad()
   def viterbi(self, emissions, predictions, input_lengths, label_lengths):
     """
     Performs viterbi decoding for the RNN-T graph (analagous to teacher forcing
@@ -134,9 +135,16 @@ class TransducerLoss(torch.nn.Module):
     U = predictions.shape[1]
     labels = torch.empty(size=(B, U - 1), device=device, dtype=torch.int32)
     certify_inputs(emissions, predictions, labels, input_lengths, label_lengths)
+    maxEs = emissions.max(dim=2, keepdim=True)[0]
+    maxPs = predictions.max(dim=2, keepdim=True)[0]
+    log_norms = torch.log(torch.bmm(
+        torch.exp(emissions - maxEs),
+        torch.exp((predictions - maxPs)).transpose(1, 2)))
+    log_norms = log_norms + maxEs + maxPs.transpose(1, 2)
     _transducer.viterbi(
         emissions.data_ptr(),
         predictions.data_ptr(),
+        log_norms.data_ptr(),
         labels.data_ptr(),
         input_lengths.data_ptr(),
         label_lengths.data_ptr(),

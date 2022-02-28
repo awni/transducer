@@ -118,6 +118,7 @@ void backward(
 void viterbi(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     int* labels,
     const int* inputLengths,
     const int* labelLengths,
@@ -132,6 +133,7 @@ void viterbi(
     cuda::viterbi(
         emissions,
         predictions,
+        logNorms,
         labels,
         inputLengths,
         labelLengths,
@@ -147,6 +149,7 @@ void viterbi(
     cpu::viterbi(
         emissions,
         predictions,
+        logNorms,
         labels,
         inputLengths,
         labelLengths,

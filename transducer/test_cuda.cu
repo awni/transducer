@@ -393,9 +393,20 @@ void viterbiTest() {
     auto inputLengthsPtr = deviceCopy(inputLengths);
     auto labelLengthsPtr = deviceCopy(labelLengths);
     auto labelsPtr = deviceCopy(labels);
+    auto logNorms = computeLogNorms(
+        emissions,
+        predictions,
+        inputLengths,
+        labelLengths,
+        maxInputLength,
+        maxLabelLength,
+        alphabetSize);
+    auto logNormsPtr = deviceCopy(logNorms);
+
     viterbi(
       emissionsPtr,
       predictionsPtr,
+      logNormsPtr,
       labelsPtr,
       inputLengthsPtr,
       labelLengthsPtr,
@@ -404,6 +415,12 @@ void viterbiTest() {
       maxLabelLength,
       alphabetSize, 0, true);
     hostCopy(labelsPtr, labels);
+    deviceFree(emissionsPtr);
+    deviceFree(predictionsPtr);
+    deviceFree(inputLengthsPtr);
+    deviceFree(labelLengthsPtr);
+    deviceFree(labelsPtr);
+    deviceFree(logNormsPtr);
   };
 
   { // Empty test

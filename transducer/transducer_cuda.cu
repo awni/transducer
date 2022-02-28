@@ -179,6 +179,7 @@ __global__
 void viterbiKernel(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     float* scores,
     int* paths,
     int* labels,
@@ -197,6 +198,7 @@ void viterbiKernel(
   }
   emissions += maxT * V * mb;
   predictions += maxU * V * mb;
+  logNorms += maxT * maxU * mb;
   scores += maxT * maxU * mb;
   paths += maxT * maxU * mb;
   labels += (maxU - 1) * mb;
@@ -219,13 +221,14 @@ void viterbiKernel(
       float noEmit = (t == 0) ? kNegInf : 
           scores[idx2(t-1, u, U)] +
           emissions[idx2(t-1, blank, V)] +
-          predictions[idx2(u, blank, V)];
+          predictions[idx2(u, blank, V)] -
+          logNorms[idx2(t-1, u, maxU)];
       float emit;
       float maxIdx = 0;
       if (u == 0) {
         emit = kNegInf;
       } else {
-        emit = scores[idx2(t, u-1, U)];
+        emit = scores[idx2(t, u-1, U)] - logNorms[idx2(t, u-1, maxU)];
         float maxScore = kNegInf;
         for (int v = 0; v < V; ++v) {
           if (v == blank) {
@@ -347,6 +350,7 @@ void backward(
 void viterbi(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     int* labels,
     const int* inputLengths,
     const int* labelLengths,
@@ -368,6 +372,7 @@ void viterbi(
     viterbiKernel<<<batchSize, threads>>>(
       emissions,
       predictions,
+      logNorms,
       scores,
       paths,
       labels,

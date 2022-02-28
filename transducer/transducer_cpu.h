@@ -37,6 +37,7 @@ void backward(
 void viterbi(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     int* labels,
     const int* inputLengths,
     const int* labelLengths,

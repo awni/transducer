@@ -145,9 +145,10 @@ void backwardSingle(
 void viterbiSingle(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     int* labels,
     int blank, int T,
-    int U, int V) {
+    int U, int maxU, int V) {
   if (T == 0 || U == 0) {
     return;
   }
@@ -171,27 +172,31 @@ void viterbiSingle(
 
   scores[0] = 0;
   for (int t = 1; t < T; t++) {
-    scores[idx2(t, 0, U)] = scores[idx2(t-1, 0, U)]
-      + emissions[idx2(t-1, blank, V)]
-      + predictions[idx2(0, blank, V)];
+    scores[idx2(t, 0, U)] = scores[idx2(t-1, 0, U)] +
+        emissions[idx2(t-1, blank, V)] +
+        predictions[idx2(0, blank, V)] -
+        logNorms[idx2(t-1, 0, maxU)];
     paths[idx2(t, 0, U)] = blank;
   }
 
   for (int u = 1; u < U; u++) {
     auto maxAndIdx = getMax(0, u - 1);
-    scores[idx2(0, u, U)] = maxAndIdx.first + scores[idx2(0, u-1, U)];
+    scores[idx2(0, u, U)] = maxAndIdx.first +
+        scores[idx2(0, u-1, U)] -
+        logNorms[idx2(0, u-1, maxU)];
     paths[idx2(0, u, U)] = maxAndIdx.second;
   }
 
   for (int t = 1; t < T; t++) {
     for (int u = 1; u < U; u++) {
-      float noEmit = scores[idx2(t-1, u, U)]
-        + emissions[idx2(t-1, blank, V)]
-        + predictions[idx2(u, blank, V)];
-      float emit = scores[idx2(t, u-1, U)];
+      float noEmit = scores[idx2(t-1, u, U)] +
+          emissions[idx2(t-1, blank, V)] +
+          predictions[idx2(u, blank, V)] -
+          logNorms[idx2(t-1, u, maxU)];
       auto maxAndIdx = getMax(t, u-1);
-      emit += maxAndIdx.first;
-
+      float emit = scores[idx2(t, u-1, U)] +
+          maxAndIdx.first -
+          logNorms[idx2(t, u-1, maxU)];
       if (emit > noEmit) {
         scores[idx2(t, u, U)] = emit;
         paths[idx2(t, u, U)] = maxAndIdx.second;
@@ -303,6 +308,7 @@ void backward(
 void viterbi(
     const float* emissions,
     const float* predictions,
+    const float* logNorms,
     int* labels,
     const int* inputLengths,
     const int* labelLengths,
@@ -315,14 +321,12 @@ void viterbi(
   for (int mb = 0; mb < batchSize; ++mb) {
     int T = inputLengths[mb]; // Length of utterance (time)
     int U = labelLengths[mb] + 1; // Length of transcription
-    int eOffset = mb * maxInputLength * alphabetSize;
-    int pOffset = mb * maxLabelLength * alphabetSize;
-    int labelOffset = mb * (maxLabelLength - 1);
     viterbiSingle(
-        emissions + eOffset,
-        predictions + pOffset,
-        labels + labelOffset,
-        blank, T, U, alphabetSize);
+        emissions + mb * maxInputLength * alphabetSize,
+        predictions + mb * maxLabelLength * alphabetSize,
+        logNorms + mb * maxInputLength * maxLabelLength,
+        labels + mb * (maxLabelLength - 1),
+        blank, T, U, maxLabelLength, alphabetSize);
   }
 }
 

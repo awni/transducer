@@ -233,6 +233,7 @@ void viterbiTest() {
         nullptr,
         nullptr,
         nullptr,
+        nullptr,
         inputLengths.data(),
         labelLengths.data(),
         1, 0, 1, 2, 0, false);
@@ -243,9 +244,12 @@ void viterbiTest() {
     std::vector<float> predictions = {0.0, 1.0};
     std::vector<int> inputLengths = {2};
     std::vector<int> labelLengths = {0};
+    auto logNorms = computeLogNorms(
+        emissions, predictions, inputLengths, labelLengths, 2, 1, 2);
     viterbi(
         emissions.data(),
         predictions.data(),
+        logNorms.data(),
         nullptr,
         inputLengths.data(),
         labelLengths.data(),
@@ -263,9 +267,12 @@ void viterbiTest() {
     std::vector<int> inputLengths = {1};
     std::vector<int> labelLengths = {3};
     std::vector<int> labels(3);
+    auto logNorms = computeLogNorms(
+        emissions, predictions, inputLengths, labelLengths, 1, 4, 3);
     viterbi(
         emissions.data(),
         predictions.data(),
+        logNorms.data(),
         labels.data(),
         inputLengths.data(),
         labelLengths.data(),
@@ -287,9 +294,12 @@ void viterbiTest() {
     std::vector<int> inputLengths = {3};
     std::vector<int> labelLengths = {2};
     std::vector<int> labels(2);
+    auto logNorms = computeLogNorms(
+        emissions, predictions, inputLengths, labelLengths, 3, 3, 3);
     viterbi(
         emissions.data(),
         predictions.data(),
+        logNorms.data(),
         labels.data(),
         inputLengths.data(),
         labelLengths.data(),
