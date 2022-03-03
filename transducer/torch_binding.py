@@ -21,16 +21,17 @@ class Transducer(torch.autograd.Function):
     expPs = torch.exp(predictions - maxPs)
     expLNs = torch.bmm(expEs, expPs.transpose(1, 2))
     log_norms = torch.log(expLNs) + maxEs + maxPs.transpose(1, 2)
-    _transducer.forward(
-        emissions.data_ptr(),
-        predictions.data_ptr(),
-        costs.data_ptr(),
-        alphas.data_ptr(),
-        log_norms.data_ptr(),
-        labels.data_ptr(),
-        input_lengths.data_ptr(),
-        label_lengths.data_ptr(),
-        B, T, U, V, blank, is_cuda)
+    with torch.cuda.device(device):
+      _transducer.forward(
+          emissions.data_ptr(),
+          predictions.data_ptr(),
+          costs.data_ptr(),
+          alphas.data_ptr(),
+          log_norms.data_ptr(),
+          labels.data_ptr(),
+          input_lengths.data_ptr(),
+          label_lengths.data_ptr(),
+          B, T, U, V, blank, is_cuda)
     ctx.save_for_backward(
         emissions, predictions, alphas, log_norms,
         labels, input_lengths, label_lengths,
@@ -51,18 +52,19 @@ class Transducer(torch.autograd.Function):
     egrads = torch.empty(size=(B, T, V), device=device, dtype=dtype)
     pgrads = torch.empty(size=(B, U, V), device=device, dtype=dtype)
     lngrads = torch.empty(size=(B, T, U), device=device, dtype=dtype)
-    _transducer.backward(
-        emissions.data_ptr(),
-        predictions.data_ptr(),
-        egrads.data_ptr(),
-        pgrads.data_ptr(),
-        lngrads.data_ptr(),
-        alphas.data_ptr(),
-        log_norms.data_ptr(),
-        labels.data_ptr(),
-        input_lengths.data_ptr(),
-        label_lengths.data_ptr(),
-        B, T, U, V, ctx.blank, is_cuda)
+    with torch.cuda.device(device):
+      _transducer.backward(
+          emissions.data_ptr(),
+          predictions.data_ptr(),
+          egrads.data_ptr(),
+          pgrads.data_ptr(),
+          lngrads.data_ptr(),
+          alphas.data_ptr(),
+          log_norms.data_ptr(),
+          labels.data_ptr(),
+          input_lengths.data_ptr(),
+          label_lengths.data_ptr(),
+          B, T, U, V, ctx.blank, is_cuda)
     lngrads = lngrads * expLNs.reciprocal()
     egrads += expEs * torch.bmm(lngrads, expPs)
     pgrads += expPs * torch.bmm(lngrads.transpose(1, 2), expEs)
@@ -146,14 +148,15 @@ class TransducerLoss(torch.nn.Module):
         torch.exp(emissions - maxEs),
         torch.exp((predictions - maxPs)).transpose(1, 2)))
     log_norms = log_norms + maxEs + maxPs.transpose(1, 2)
-    _transducer.viterbi(
-        emissions.data_ptr(),
-        predictions.data_ptr(),
-        log_norms.data_ptr(),
-        labels.data_ptr(),
-        input_lengths.data_ptr(),
-        label_lengths.data_ptr(),
-        B, T, U, V, self.blank, is_cuda)
+    with torch.cuda.device(device):
+      _transducer.viterbi(
+          emissions.data_ptr(),
+          predictions.data_ptr(),
+          log_norms.data_ptr(),
+          labels.data_ptr(),
+          input_lengths.data_ptr(),
+          label_lengths.data_ptr(),
+          B, T, U, V, self.blank, is_cuda)
     return labels
 
 
