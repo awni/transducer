@@ -48,7 +48,10 @@ implementations use memory which scales with the product `B * T * U * V` (where
 maximum output length in the batch, and `V` is the token set size). The memory
 of this implementation scales with the product `B * T * U` and does not
 increase with the token set size. This is particularly important for the large
-token set sizes commonly used with word pieces.
+token set sizes commonly used with word pieces. (**NB** In this implementation you
+cannot use a "joiner" network to connect the outputs of the transcription and
+prediction models. The algorithm hardcodes the fact that these are additively
+combined.)
 
 Performance benchmarks for the CUDA version running on an A100 GPU are below.
 We compare to the [Torch Audio RNN-T
