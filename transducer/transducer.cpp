@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "transducer.h"
 #include "transducer_cpu.h"
 

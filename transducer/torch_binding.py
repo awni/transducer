@@ -3,6 +3,23 @@
 import torch
 from . import _transducer
 
+
+class DeviceManager(object):
+
+    def __init__(self, device):
+        self.device = device
+        self.is_cuda = (device.type == "cuda")
+
+    def __enter__(self):
+        if self.is_cuda:
+            self.old_device = torch.cuda.get_device()
+            torch.cuda.set_device(self.device)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.is_cuda:
+            torch.cuda.set_device(self.old_device)
+
+
 class Transducer(torch.autograd.Function):
 
   @staticmethod
@@ -21,7 +38,7 @@ class Transducer(torch.autograd.Function):
     expPs = torch.exp(predictions - maxPs)
     expLNs = torch.bmm(expEs, expPs.transpose(1, 2))
     log_norms = torch.log(expLNs) + maxEs + maxPs.transpose(1, 2)
-    with torch.cuda.device(device):
+    with DeviceManager(device):
       _transducer.forward(
           emissions.data_ptr(),
           predictions.data_ptr(),
@@ -52,7 +69,7 @@ class Transducer(torch.autograd.Function):
     egrads = torch.empty(size=(B, T, V), device=device, dtype=dtype)
     pgrads = torch.empty(size=(B, U, V), device=device, dtype=dtype)
     lngrads = torch.empty(size=(B, T, U), device=device, dtype=dtype)
-    with torch.cuda.device(device):
+    with DeviceManager(device):
       _transducer.backward(
           emissions.data_ptr(),
           predictions.data_ptr(),
@@ -148,7 +165,7 @@ class TransducerLoss(torch.nn.Module):
         torch.exp(emissions - maxEs),
         torch.exp((predictions - maxPs)).transpose(1, 2)))
     log_norms = log_norms + maxEs + maxPs.transpose(1, 2)
-    with torch.cuda.device(device):
+    with DeviceManager(device):
       _transducer.viterbi(
           emissions.data_ptr(),
           predictions.data_ptr(),
